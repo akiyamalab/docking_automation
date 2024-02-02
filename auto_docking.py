@@ -1,3 +1,4 @@
+import time
 import subprocess
 #cmd = "export PYTHONPATH=/Users/kaito/mgltools_1.5.7_MacOS-X/MGLToolsPckgs/:$PYTHONPATH"
 #subprocess.run(cmd, shell=True)
@@ -29,11 +30,14 @@ def convert_sdf_to_pdb(input_sdf, output_pdb_prefix):
     return i
 
 if __name__ == "__main__":
+    time1=time.time()
     input_sdf_file = sys.argv[1] 
     output_pdb_prefix = "output" 
 
 
     n=convert_sdf_to_pdb(input_sdf_file, output_pdb_prefix)
+    cmd="rm "+input_sdf_file
+    subprocess.run(cmd, shell=True)
     #cmd = "conda deactivate"
     #subprocess.run(cmd, shell=True)
     #command = f'''
@@ -49,17 +53,30 @@ if __name__ == "__main__":
         filename='output_'+str((h+(njob-1)*ybun)+1)+'.pdb'
         cmd = "prepare_ligand -l "+filename+" -A bonds_hydrogen"
         subprocess.run(cmd, shell=True)
+        cmd="rm output_"+str((h+(njob-1)*ybun)+1)+".pdb"
+        subprocess.run(cmd, shell=True)
     cmd = "prepare_receptor -r "+sys.argv[2]+" -A bonds_hydrogen"
     subprocess.run(cmd, shell=True)
     cmd = "mkdir result"
     subprocess.run(cmd, shell=True)
     for e in range(n):
         filename='output_'+str((e+(njob-1)*ybun)+1)+'.pdbqt'
-        cmd="~/autodock_vina_1_1_2_linux_x86/bin/vina --seed 42 --num_modes 1 --receptor protein.pdbqt --ligand "+filename+" --config autodock.conf --out result/muti_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt --log result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log"
-        cmd="result/muti_autodock"+str(e+1)+".pdbqt >> result/result"+str(njob)+".pdbqt"         #追記する
+        cmd="~/autodock_vina_1_1_2_linux_x86/bin/vina --seed 42 --num_modes 1 --receptor protein.pdbqt --ligand "+filename+" --config autodock.conf --out result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt --log result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log"
         subprocess.run(cmd, shell=True)
-        cmd="rm result/muti_autodock"+str(e+1)+".pdbqt"            #削除する
+        cmd="rm output_"+str((e+(njob-1)*ybun)+1)+".pdbqt"
         subprocess.run(cmd, shell=True)
-	subprocess.run(cmd, shell=True)
-        #if e==0:
-        #    break
+        cmd="touch result/result"+str(njob)+".pdbqt"
+        subprocess.run(cmd, shell=True)
+        cmd="chmod 755 result/result"+str(njob)+".pdbqt"
+        subprocess.run(cmd, shell=True)
+        cmd="chmod 755 result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt"
+        subprocess.run(cmd, shell=True)
+        cmd="cat result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt >> result/result"+str(njob)+".pdbqt"         #追記する
+        subprocess.run(cmd, shell=True)
+        cmd="rm result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt"            #削除する
+        subprocess.run(cmd, shell=True)
+        cmd="rm result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log"            #削除する
+        subprocess.run(cmd, shell=True)
+    time2=time.time()
+
+    print("time="+str(time2-time1))
