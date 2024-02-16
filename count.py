@@ -8,3 +8,4 @@ for line in lines:
         p=p+1
 n=int(p/int(h))
 print(n)
+#print(p)
