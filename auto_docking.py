@@ -6,15 +6,13 @@ import subprocess
 #cmd = "conda activate tmp_20231111_2"
 #subprocess.run(cmd, shell=True)
 
-from openbabel import openbabel
-from openbabel import pybel
 import sys
 #sys.path.append("/usr/local/bin/pymol")
 #from pymol import cmd
 import os
 
 ybun=int(sys.argv[3])+1
-njob=int(sys.argv[4])
+njob=int(sys.argv[4]) # n-th job (not number of jobs)
 
 
 #sys.argv[1]=sdf

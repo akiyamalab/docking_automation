@@ -6,21 +6,17 @@ originale=sys.stderr
 sys.stderr=open('/dev/null','w')'''
 
 
-from openbabel import openbabel
 from openbabel import pybel
 import subprocess
-import time
 
 #SDF
 #protein.pdb
 
-c=int(sys.argv[2])
-b=int(sys.argv[3])
-
+n_cmpds_per_job=int(sys.argv[2])
 
 input_sdf=sys.argv[1]
 molecules = pybel.readfile("sdf", input_sdf)
-i=0
+n_cmpds=0
 
 cmd = "prepare_receptor -r protein.pdb -A bonds_hydrogen"
 subprocess.run(cmd, shell=True)
@@ -35,16 +31,17 @@ for idx, mol in enumerate(molecules):
    #mol.write("pdb", "output_pdb/"+output_pdb_file)#,overwrite=True,opt={"d": None,"h": None,"g": None,"t": None})
     mol.make3D(forcefield="mmff94")
     mol.write("pdb", output_pdb_file,overwrite=True)
-    i=i+1
+    n_cmpds=n_cmpds+1
 
 '''sys.stdout=original
 sys.stderr=originale'''
 
-if i%(c+1) == 0:
-    pp=int(i/(c+1))+1
+# MEMO: pp? over? (Yanagisawa)
+if n_cmpds%(n_cmpds_per_job+1) == 0:
+    pp=int(n_cmpds/(n_cmpds_per_job+1))+1
     over=0
 else:
-    pp=int(i/(c+1))+1
-    over=i-(c*int(i/(c+1)))
+    pp=int(n_cmpds/(n_cmpds_per_job+1))+1
+    over=n_cmpds-(n_cmpds_per_job*int(n_cmpds/(n_cmpds_per_job+1)))
 
 print(str(pp)+'/'+str(over))
