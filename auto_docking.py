@@ -11,6 +11,12 @@ import sys
 #from pymol import cmd
 import os
 
+import configparser
+config = configparser.ConfigParser()
+config.read('settings.ini')
+VINA             = config["EXECUTABLE"]["VINA"]
+PREPARE_LIGAND   = config["EXECUTABLE"]["PREPARE_LIGAND"]
+
 ybun=int(sys.argv[3])+1
 njob=int(sys.argv[4]) # n-th job (not number of jobs)
 
@@ -69,7 +75,7 @@ if __name__ == "__main__":
         print(h)
         #print((h+(njob-1)*ybun)+1)
         filename='output_'+str((h+(njob-1)*ybun)+1)+'.pdb'
-        cmd = "prepare_ligand -l "+filename+" -A bonds_hydrogen"
+        cmd = f"{PREPARE_LIGAND} -l {filename} -A bonds_hydrogen"
         try:
            subprocess.run(cmd, shell=True)
         except subprocess.TimeoutExpired:
@@ -95,7 +101,7 @@ if __name__ == "__main__":
         if not os.path.exists(filename):
             continue
         #print((e+(njob-1)*ybun)+1)
-        cmd="~/autodock_vina_1_1_2_linux_x86/bin/vina --seed 42 --cpu 1 --num_modes 1 --receptor protein.pdbqt --ligand "+filename+" --config autodock.conf --out result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt --log result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log > "+outfilename
+        cmd=f"{VINA} --seed 42 --cpu 1 --num_modes 1 --receptor protein.pdbqt --ligand "+filename+" --config autodock.conf --out result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt --log result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log > "+outfilename
         subprocess.run(cmd, shell=True)
         cmd="rm output_"+str((e+(njob-1)*ybun)+1)+".pdbqt"
         subprocess.run(cmd, shell=True)

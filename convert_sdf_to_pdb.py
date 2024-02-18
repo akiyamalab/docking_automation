@@ -12,13 +12,18 @@ import subprocess
 #SDF
 #protein.pdb
 
+import configparser
+config = configparser.ConfigParser()
+config.read('settings.ini')
+PREPARE_RECEPTOR = config["EXECUTABLE"]["PREPARE_RECEPTOR"]
+
 n_cmpds_per_job=int(sys.argv[2])
 
 input_sdf=sys.argv[1]
 molecules = pybel.readfile("sdf", input_sdf)
 n_cmpds=0
 
-cmd = "prepare_receptor -r protein.pdb -A bonds_hydrogen"
+cmd = f"{PREPARE_RECEPTOR} -r protein.pdb -A bonds_hydrogen"
 subprocess.run(cmd, shell=True)
     # 複数のPDBファイルに変換
 output_pdb_prefix="output"
