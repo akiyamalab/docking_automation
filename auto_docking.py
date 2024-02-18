@@ -101,7 +101,13 @@ if __name__ == "__main__":
         if not os.path.exists(filename):
             continue
         #print((e+(njob-1)*ybun)+1)
-        cmd=f"{VINA} --seed 42 --cpu 1 --num_modes 1 --receptor protein.pdbqt --ligand "+filename+" --config autodock.conf --out result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt --log result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log > "+outfilename
+        cmd=f"""{VINA} --seed 42 --cpu 1 --num_modes 1 \
+                  --receptor protein.pdbqt \
+                  --ligand {filename} \
+                  --config autodock.conf \
+                  --out result/multi_autodock{str((e+(njob-1)*ybun)+1)}.pdbqt \
+                  --log result/multi_autodock{str((e+(njob-1)*ybun)+1)}.log \
+                    > {outfilename}"""
         subprocess.run(cmd, shell=True)
         cmd="rm output_"+str((e+(njob-1)*ybun)+1)+".pdbqt"
         subprocess.run(cmd, shell=True)
