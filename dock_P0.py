@@ -11,6 +11,9 @@ c=int(sys.argv[2])
 b=int(sys.argv[3])
 
 
+#pointを超えたらsys.exit()
+
+
 input_sdf=sys.argv[1]
 molecules = pybel.readfile("sdf", input_sdf)
 i=0
@@ -19,13 +22,14 @@ i=0
 #subprocess.run(cmd, shell=True)
     # 複数のPDBファイルに変換
 output_pdb_prefix="output"
+#output_pdb_prefix="ligand/output"
 
 
 
 for idx, mol in enumerate(molecules):
-    output_pdb_file = f"{output_pdb_prefix}_{idx+ 1}.pdb"
-    mol.make3D(forcefield="mmff94")
-    mol.write("pdb", output_pdb_file,overwrite=True)
+    #output_pdb_file = f"{output_pdb_prefix}_{idx+ 1}.pdb"
+    #mol.make3D(forcefield="mmff94")
+    #mol.write("pdb", output_pdb_file,overwrite=True)
     i=i+1
 
 
@@ -38,4 +42,3 @@ else:
     over=i-((c+1)*int(i/(c+1)))
 
 print(str(pp)+'/'+str(over))
-

@@ -1,25 +1,37 @@
-print('fffffffff')
 import time
 import subprocess
-#cmd = "export PYTHONPATH=/Users/kaito/mgltools_1.5.7_MacOS-X/MGLToolsPckgs/:$PYTHONPATH"
-#subprocess.run(cmd, shell=True)
-#cmd = "conda activate tmp_20231111_2"
-#subprocess.run(cmd, shell=True)
 
+
+from openbabel import openbabel
+from openbabel import pybel
 import sys
-#sys.path.append("/usr/local/bin/pymol")
-#from pymol import cmd
+
 import os
 
-import configparser
-config = configparser.ConfigParser()
-config.read('settings.ini')
-VINA             = config["EXECUTABLE"]["VINA"]
-PREPARE_LIGAND   = config["EXECUTABLE"]["PREPARE_LIGAND"]
-
 ybun=int(sys.argv[3])+1
-njob=int(sys.argv[4]) # n-th job (not number of jobs)
+njob=int(sys.argv[4])
 
+fg=open('joblist_'+str(njob)+'.txt','r')
+fglist=fg.readlines()
+
+
+cmd="touch taioulist"+str(njob)+".txt"
+subprocess.run(cmd, shell=True)
+taioulist_file=open("taioulist"+str(njob)+".txt",'w')
+
+def get_molecule_weight(pdbqt_file):
+    # Open BabelのMoleculeオブジェクトを作成
+    mol = openbabel.OBMol()
+
+    # pdbqtファイルを読み込む
+    conv = openbabel.OBConversion()
+    conv.SetInAndOutFormats("pdbqt", "pdbqt")
+    conv.ReadFile(mol, pdbqt_file)
+
+    # 分子量を取得
+    mol_wight = mol.GetMolWt()
+
+    return mol_wight
 
 #sys.argv[1]=sdf
 #sys.argv[2]=pdb
@@ -38,22 +50,26 @@ njob=int(sys.argv[4]) # n-th job (not number of jobs)
 
 if __name__ == "__main__":
     time1=time.time()
-#    input_sdf_file = sys.argv[1] 
+#    input_sdf_file = sys.argv[1]
 #    n=int(sys.argv[1])
-    output_pdb_prefix = "output" 
+    output_pdb_prefix = "output"
 
     print("aaaa="+sys.argv[1]+'aaaaaaaa')
-    
-    last=int(sys.argv[1].split('\n')[2].split('/')[1])
-    point=int(sys.argv[1].split('\n')[2].split('/')[0])
+
+    #last=int(sys.argv[1].split('\n')[2].split('/')[1])
+    #point=int(sys.argv[1].split('\n')[2].split('/')[0])
+    last=int(sys.argv[1].split('/')[1])
+    point=int(sys.argv[1].split('/')[0])
 
     if njob < point:
         n=ybun
     elif njob == point:
         n=last
     else:
-        n=0  
-  
+        n=0
+
+    n=len(fglist)
+
     print('xxxxxxxxxxx')
 
     #n=convert_sdf_to_pdb(input_sdf_file, output_pdb_prefix)
@@ -71,19 +87,7 @@ if __name__ == "__main__":
     #for z in range(n):
     #    remove_water_from_pdb('output_'+str(z+1)+'.pdb', 'output_'+str(z+1)+'.pdb')"""
 
-    for h in range(n):
-        print(h)
-        #print((h+(njob-1)*ybun)+1)
-        filename='output_'+str((h+(njob-1)*ybun)+1)+'.pdb'
-        cmd = f"{PREPARE_LIGAND} -l {filename} -A bonds_hydrogen"
-        try:
-           subprocess.run(cmd, shell=True)
-        except subprocess.TimeoutExpired:
-           cmd="rm output_"+str((h+(njob-1)*ybun)+1)+".pdb"
-           subprocess.run(cmd, shell=True)
-           continue
-        cmd="rm output_"+str((h+(njob-1)*ybun)+1)+".pdb"
-        subprocess.run(cmd, shell=True)
+
 #    cmd = "prepare_receptor -r "+sys.argv[2]+" -A bonds_hydrogen"
 #    subprocess.run(cmd, shell=True)
     time2=time.time()
@@ -93,36 +97,72 @@ if __name__ == "__main__":
     subprocess.run(cmd, shell=True)
     cmd = "mkdir result"
     subprocess.run(cmd, shell=True)
+
+    input_taiou_file=open('data_taiou.txt','r')
+    taiou_data_list=input_taiou_file.readlines()
+    input_taiou_file.close()
+    njob_taiou_list=open('njob_taiou_'+str(njob)+'.txt','w')
+    allpre_taiou=open('data_taiou.txt','r')
+    allpre_taiou_list=allpre_taiou.readlines()
+    allpre_taiou.close()
+
     for e in range(n):
-        outfilename='result/tto'+str((e+(njob-1)*ybun)+1)+'.txt'
-        cmd='touch '+filename
+        filename=fglist[e].replace('\n','')
+        if filename == '':
+            break
+        input_file=open(filename,'r')
+        lines=input_file.readlines()
+        for line in lines:
+            if line[0:12]=='REMARK  Name':
+                title=line.split()[3]
+        input_file.close()
+        outfilename='result/tto'+str(njob)+'_'+str(e+1)+'.txt'
+        cmd='touch '+outfilename
         subprocess.run(cmd, shell=True)
-        filename='output_'+str((e+(njob-1)*ybun)+1)+'.pdbqt'
+        #filename='output_'+str((e+(njob-1)*ybun)+1)+'.pdbqt'
         if not os.path.exists(filename):
             continue
+        weight = get_molecule_weight(filename)
+        if weight >= 700:
+            for tai in allpre_taiou_list:
+                if tai == '':
+                    break
+                if tai.split(',')[0] == title:
+                    njob_taiou_list.write(tai.replace('\n','')+',C'+'\n')
+            continue
         #print((e+(njob-1)*ybun)+1)
-        cmd=f"""{VINA} --seed 42 --cpu 1 --num_modes 1 \
-                  --receptor protein.pdbqt \
-                  --ligand {filename} \
-                  --config autodock.conf \
-                  --out result/multi_autodock{str((e+(njob-1)*ybun)+1)}.pdbqt \
-                  --log result/multi_autodock{str((e+(njob-1)*ybun)+1)}.log \
-                    > {outfilename}"""
+        time1=time.time()
+        cmd="~/autodock_vina_1_1_2_linux_x86/bin/vina --seed 42 --cpu 1 --num_modes 1 --receptor protein.pdbqt --ligand "+filename+" --config autodock.conf --out result/multi_autodock"+str(njob)+'_'+str(e+1)+".pdbqt --log result/multi_autodock"+str(njob)+'_'+str(e+1)+".log > "+outfilename
         subprocess.run(cmd, shell=True)
-        cmd="rm output_"+str((e+(njob-1)*ybun)+1)+".pdbqt"
-        subprocess.run(cmd, shell=True)
+        time2=time.time()
+        dockingtime=time2-time1
+
+        for tai in allpre_taiou_list:
+            if tai == '':
+                break
+            if tai.split(',')[0] == title:
+                njob_taiou_list.write(tai.replace('\n','')+','+str(dockingtime)+'\n')
+                break
+
+        #cmd="rm output_"+str((e+(njob-1)*ybun)+1)+".pdbqt"
+        #subprocess.run(cmd, shell=True)
         cmd="touch result/result"+str(njob)+".pdbqt"
         subprocess.run(cmd, shell=True)
         cmd="chmod 755 result/result"+str(njob)+".pdbqt"
         subprocess.run(cmd, shell=True)
-        cmd="chmod 755 result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt"
+        cmd="chmod 755 result/multi_autodock"+str(njob)+'_'+str(e+1)+".pdbqt"
         subprocess.run(cmd, shell=True)
-        cmd="cat result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt >> result/result"+str(njob)+".pdbqt"         #追記する
+        cmd="cat result/multi_autodock"+str(njob)+'_'+str(e+1)+".pdbqt >> result/result"+str(njob)+".pdbqt"         #追記する
         subprocess.run(cmd, shell=True)
-        cmd="rm result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".pdbqt"            #削除する
+        cmd="rm result/multi_autodock"+str(njob)+'_'+str(e+1)+".pdbqt"            #削除する
         subprocess.run(cmd, shell=True)
-        cmd="rm result/multi_autodock"+str((e+(njob-1)*ybun)+1)+".log"            #削除する
+        cmd="rm result/multi_autodock"+str(njob)+'_'+str(e+1)+".log"            #削除する
         subprocess.run(cmd, shell=True)
+
+        #taioulist_file.write(str((e+(njob-1)*ybun)+1)+' ')
     time2=time.time()
 
+    taioulist_file.close()
+    njob_taiou_list.close()
     print("docking time="+str(time2-time1))
+
