@@ -6,15 +6,17 @@
 COUNT=$1
 
 LAST=$2
+
+PROCOUNT=$3
+
 echo $SLURM_ARRAY_TASK_ID
 echo $COUNT
 echo $LAST
 
 start=$(date +%s)
 
-python auto_docking.py "${LAST}" protein.pdb "${COUNT}" "${SLURM_ARRAY_TASK_ID}"
+python auto_docking.py "${LAST}" protein.pdb "${COUNT}" "${SLURM_ARRAY_TASK_ID}" "${PROCOUNT}"
 #python henkan.py "result${SLURM_ARRAY_TASK_ID}.pdbqt" "${SLURM_ARRAY_TASK_ID}"
 end=$(date +%s)
 
 echo "alltime : $(($end-$start)) second"
-

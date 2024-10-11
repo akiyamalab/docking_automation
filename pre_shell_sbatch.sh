@@ -4,7 +4,14 @@ mkdir ligand
 chmod 755 ligand
 
 rm output*.pdbqt
-prepare_receptor -r protein.pdb -A bonds_hydrogen
+
+PROCOUNT=$(python receptor_N_count.py)
+for ((N=1; N<=PROCOUNT; N++))
+do
+  prepare_receptor -r input_protein/protein${N}.pdb -o input_protein/protein${N}.pdbqt -A bonds_hydrogen
+done
+
+#prepare_receptor -r protein.pdb -A bonds_hydrogen
 
 COUNT=$(python count.py input_100000.sdf 352)
 

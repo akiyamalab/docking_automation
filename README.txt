@@ -1,3 +1,8 @@
+＜前提＞
+input_proteinディレクトリにプロテインファイルを配置・ファイル名はprotein1.pdb〜proteinN.pdb
+Input_confディレクトリにグリッドファイルを配置・ファイル名はプロテインファイルと対応するようにautodock1.conf〜autodockN.cpnf
+
+
 手順１、２は352並列で実行（10万件であれば10時間程度で終了する）
 
 1,   作業ディレククトリ下のpre_shell_sbatch.shを実行することでsdfファイルからpdbqtファイルを複数生成
