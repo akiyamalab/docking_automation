@@ -11,4 +11,4 @@ echo $P0
 P0=$(python idou.py "$P0")
 echo $P0
 
-sbatch  slurm.sh $COUNT "$P0" $PRECOUNT
+sbatch  slurm.sh $COUNT "$P0" $PROCOUNT

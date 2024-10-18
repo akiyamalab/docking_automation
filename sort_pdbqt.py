@@ -31,7 +31,7 @@ for line in linelist:
 lastlist.append(conlist)
 lastlist=sorted(lastlist,key=lambda x: x[0])
 
-output_file=open('sorted-'+sys.argv[1],'w')
+output_file=open(sys.argv[1].split('/')[0]+'/sorted-'+sys.argv[1].split('/')[1],'w')
 
 for line in lastlist:
     output_file.write(line[1])

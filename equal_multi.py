@@ -130,7 +130,7 @@ for yylis in sorted_list:
             break
     if j == 0:
         sorted_sublist[0][0].append(yylis[0])
-        sorted_sublist[1][1]=sorted_sublist[1][1]+yylis[1]
+        sorted_sublist[0][1]=sorted_sublist[0][1]+yylis[1]
 
 
 
