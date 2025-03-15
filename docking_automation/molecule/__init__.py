@@ -13,7 +13,8 @@ from docking_automation.molecule.service.molecule_preparation_service import Mol
 
 # 値オブジェクトのエクスポート
 from docking_automation.molecule.value_object.molecule_property import MoleculeProperty
-from docking_automation.molecule.value_object.molecule_structure import MoleculeStructure
+from docking_automation.molecule.value_object.molecule_structure import MoleculeStructure, Atom, Bond
+from docking_automation.molecule.value_object.molecule_format import MoleculeFormat, FormatType
 
 __all__ = [
     'Compound',
@@ -21,5 +22,9 @@ __all__ = [
     'Molecule',
     'MoleculePreparationService',
     'MoleculeProperty',
-    'MoleculeStructure'
+    'MoleculeStructure',
+    'Atom',
+    'Bond',
+    'MoleculeFormat',
+    'FormatType'
 ]

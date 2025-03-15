@@ -3,16 +3,20 @@ import tempfile
 import shutil
 import logging
 import uuid
-from typing import List, Optional, Dict, Any
+import inspect
+from typing import List, Optional, Dict, Any, Union, cast, TypeVar, Set
 
-from docking_automation.domain.molecule.service.molecule_preparation_service import MoleculePreparationService
-from docking_automation.domain.molecule.entity.compound import Compound
-from docking_automation.domain.molecule.entity.protein import Protein
-from docking_automation.domain.molecule.value_object.molecule_property import MoleculeProperty, PropertyType
-from docking_automation.domain.molecule.value_object.molecule_format import FormatType, MoleculeFormat
+from docking_automation.molecule.service.molecule_preparation_service import MoleculePreparationService
+from docking_automation.molecule.entity.compound import Compound
+from docking_automation.molecule.entity.protein import Protein
+from docking_automation.molecule.value_object.molecule_property import MoleculeProperty, PropertyType
+from docking_automation.molecule.value_object.molecule_format import FormatType, MoleculeFormat
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
+
+# 分子型のUnion型（Compound または Protein）
+MoleculeType = Union[Compound, Protein]
 
 
 class MockMoleculePreparationService(MoleculePreparationService):
@@ -29,6 +33,157 @@ class MockMoleculePreparationService(MoleculePreparationService):
         self._temp_dir = tempfile.mkdtemp(prefix="docking_mock_")
         logger.info(f"Created temporary directory: {self._temp_dir}")
     
+    def _is_prepared(self, molecule: MoleculeType) -> bool:
+        """分子が既に準備済みかどうかを安全に確認する
+        
+        Args:
+            molecule: 確認する分子
+            
+        Returns:
+            準備済みの場合はTrue、そうでない場合はFalse
+        """
+        return bool(getattr(molecule, 'is_prepared', False))
+    
+    def _get_format_type(self, molecule: MoleculeType) -> Optional[FormatType]:
+        """分子のフォーマット型を安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            フォーマット型、または取得できない場合はNone
+        """
+        if hasattr(molecule, 'format') and molecule.format is not None:
+            return getattr(molecule.format, 'type', None)
+        return None
+    
+    def _get_metadata(self, molecule: MoleculeType) -> Dict[str, Any]:
+        """分子のメタデータを安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            メタデータ辞書（デフォルトは空辞書）
+        """
+        metadata = getattr(molecule, 'metadata', {})
+        return metadata.copy() if hasattr(metadata, 'copy') else {}
+    
+    def _get_safe_chains(self, molecule: MoleculeType) -> Set[str]:
+        """分子のチェーン情報を安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            チェーン識別子のセット（デフォルトは空セット）
+        """
+        # Proteinクラスにのみchainsが存在するため、クラスをチェック
+        if isinstance(molecule, Protein) and hasattr(molecule, 'chains'):
+            chains = molecule.chains
+            return chains.copy() if hasattr(chains, 'copy') else set(chains)
+        return set()
+    
+    def _get_properties(self, molecule: MoleculeType) -> List[Any]:
+        """分子の特性を安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            特性のリスト（デフォルトは空リスト）
+        """
+        # 安全に属性を取得
+        if hasattr(molecule, 'properties'):
+            properties = molecule.properties  # type: ignore
+            return properties.copy() if hasattr(properties, 'copy') else list(properties)
+        return []
+    
+    def _get_active_site_residues(self, protein: Protein) -> Set[str]:
+        """タンパク質のアクティブサイト残基を安全に取得する
+        
+        Args:
+            protein: 対象のタンパク質
+            
+        Returns:
+            アクティブサイト残基のセット（デフォルトは空セット）
+        """
+        # 安全に属性を取得
+        if hasattr(protein, 'active_site_residues'):
+            active_site_residues = protein.active_site_residues  # type: ignore
+            return active_site_residues.copy() if hasattr(active_site_residues, 'copy') else set(active_site_residues)
+        return set()
+
+    def _create_prepared_compound(self, compound: Compound, output_path: str, method: Optional[str] = None) -> Compound:
+        """準備済みCompoundオブジェクトを作成する
+        
+        Args:
+            compound: 元のCompoundオブジェクト
+            output_path: 出力ファイルパス
+            method: 使用した準備方法
+            
+        Returns:
+            新しいCompoundオブジェクト
+        """
+        # Compoundコンストラクタのパラメータを動的に準備
+        params = {
+            "id": compound.id,
+            "path": output_path,
+            "structure": compound.structure,
+            "format": MoleculeFormat(type=FormatType.PDBQT),
+            "metadata": self._get_metadata(compound)
+        }
+        
+        # 'is_prepared'と'preparation_method'をメタデータに格納
+        params["metadata"]["is_prepared"] = True
+        params["metadata"]["preparation_method"] = method or "mock"
+        
+        # 特性情報をメタデータに格納
+        properties = self._get_properties(compound)
+        if properties:
+            params["metadata"]["properties"] = properties
+        
+        return Compound(**params)
+    
+    def _create_prepared_protein(self, protein: Protein, output_path: str, method: Optional[str] = None) -> Protein:
+        """準備済みProteinオブジェクトを作成する
+        
+        Args:
+            protein: 元のProteinオブジェクト
+            output_path: 出力ファイルパス
+            method: 使用した準備方法
+            
+        Returns:
+            新しいProteinオブジェクト
+        """
+        # Proteinコンストラクタのパラメータを動的に準備
+        params = {
+            "id": protein.id,
+            "path": output_path,
+            "structure": protein.structure,
+            "format": MoleculeFormat(type=FormatType.PDBQT),
+            "chains": self._get_safe_chains(protein),
+            "metadata": self._get_metadata(protein)
+        }
+        
+        # 追加情報をメタデータに格納
+        params["metadata"]["is_prepared"] = True
+        params["metadata"]["preparation_method"] = method or "mock"
+        params["metadata"]["has_water"] = False
+        params["metadata"]["has_hydrogens"] = True
+        
+        # 特性情報をメタデータに格納
+        properties = self._get_properties(protein)
+        if properties:
+            params["metadata"]["properties"] = properties
+            
+        # アクティブサイト情報をメタデータに格納
+        active_site_residues = self._get_active_site_residues(protein)
+        if active_site_residues:
+            params["metadata"]["active_site_residues"] = active_site_residues
+        
+        return Protein(**params)
+    
     def prepare_ligand(self, compound: Compound, method: Optional[str] = None) -> Compound:
         """化合物をリガンドとして準備する
         
@@ -42,7 +197,8 @@ class MockMoleculePreparationService(MoleculePreparationService):
         logger.info(f"Mock preparing ligand: {compound.id} (method: {method})")
         
         # 既に準備済みの場合はそのまま返す
-        if compound.is_prepared and compound.format.type == FormatType.PDBQT:
+        format_type = self._get_format_type(compound)
+        if self._is_prepared(compound) and format_type == FormatType.PDBQT:
             return compound
         
         # 出力ファイルパスの作成
@@ -58,16 +214,7 @@ class MockMoleculePreparationService(MoleculePreparationService):
             f.write("TORSDOF 0\n")
         
         # 新しい化合物オブジェクトを作成
-        prepared_compound = Compound(
-            id=compound.id,
-            structure=compound.structure,
-            format=MoleculeFormat(type=FormatType.PDBQT),
-            properties=compound.properties.copy(),
-            path=output_path,
-            metadata=compound.metadata.copy(),
-            is_prepared=True,
-            preparation_method=method or "mock"
-        )
+        prepared_compound = self._create_prepared_compound(compound, output_path, method)
         
         logger.info(f"Ligand prepared successfully: {output_path}")
         return prepared_compound
@@ -85,7 +232,8 @@ class MockMoleculePreparationService(MoleculePreparationService):
         logger.info(f"Mock preparing receptor: {protein.id} (method: {method})")
         
         # 既に準備済みの場合はそのまま返す
-        if protein.is_prepared and protein.format.type == FormatType.PDBQT:
+        format_type = self._get_format_type(protein)
+        if self._is_prepared(protein) and format_type == FormatType.PDBQT:
             return protein
         
         # 出力ファイルパスの作成
@@ -100,20 +248,7 @@ class MockMoleculePreparationService(MoleculePreparationService):
             f.write("ATOM      4  O   ALA A   1       1.702   2.139   0.912  1.00  0.00    -0.500 OA\n")
         
         # 新しいタンパク質オブジェクトを作成
-        prepared_protein = Protein(
-            id=protein.id,
-            structure=protein.structure,
-            format=MoleculeFormat(type=FormatType.PDBQT),
-            properties=protein.properties.copy(),
-            path=output_path,
-            metadata=protein.metadata.copy(),
-            is_prepared=True,
-            preparation_method=method or "mock",
-            chains=protein.chains.copy(),
-            has_water=False,
-            has_hydrogens=True,
-            active_site_residues=protein.active_site_residues.copy()
-        )
+        prepared_protein = self._create_prepared_protein(protein, output_path, method)
         
         logger.info(f"Receptor prepared successfully: {output_path}")
         return prepared_protein
@@ -156,7 +291,7 @@ class MockMoleculePreparationService(MoleculePreparationService):
         
         return properties
     
-    def add_hydrogens(self, molecule: Compound | Protein, ph: float = 7.4) -> Compound | Protein:
+    def add_hydrogens(self, molecule: MoleculeType, ph: float = 7.4) -> MoleculeType:
         """分子に水素原子を追加する
         
         Args:
@@ -168,23 +303,23 @@ class MockMoleculePreparationService(MoleculePreparationService):
         """
         logger.info(f"Mock adding hydrogens to molecule at pH {ph}")
         
-        # 同じオブジェクトを返すが、has_hydrogensフラグを更新
+        # 同じオブジェクトを返すが、メタデータを更新
         if isinstance(molecule, Protein):
-            return Protein(
-                id=molecule.id,
-                structure=molecule.structure,
-                format=molecule.format,
-                properties=molecule.properties.copy(),
-                path=molecule.path,
-                metadata=molecule.metadata.copy(),
-                is_prepared=molecule.is_prepared,
-                preparation_method=molecule.preparation_method,
-                chains=molecule.chains.copy(),
-                has_water=molecule.has_water,
-                has_hydrogens=True,
-                active_site_residues=molecule.active_site_residues.copy()
-            )
+            params = {
+                "id": molecule.id,
+                "path": molecule.path,
+                "structure": molecule.structure,
+                "format": molecule.format,
+                "chains": self._get_safe_chains(molecule),
+                "metadata": self._get_metadata(molecule)
+            }
+            
+            # メタデータに水素添加情報を追加
+            params["metadata"]["has_hydrogens"] = True
+            
+            return Protein(**params)
         else:
+            # Compoundの場合は同じオブジェクトを返す
             return molecule
     
     def remove_water(self, protein: Protein) -> Protein:
@@ -198,21 +333,20 @@ class MockMoleculePreparationService(MoleculePreparationService):
         """
         logger.info(f"Mock removing water from protein: {protein.id}")
         
-        # 同じオブジェクトを返すが、has_waterフラグを更新
-        return Protein(
-            id=protein.id,
-            structure=protein.structure,
-            format=protein.format,
-            properties=protein.properties.copy(),
-            path=protein.path,
-            metadata=protein.metadata.copy(),
-            is_prepared=protein.is_prepared,
-            preparation_method=protein.preparation_method,
-            chains=protein.chains.copy(),
-            has_water=False,
-            has_hydrogens=protein.has_hydrogens,
-            active_site_residues=protein.active_site_residues.copy()
-        )
+        # 新しいタンパク質オブジェクトを作成
+        params = {
+            "id": protein.id,
+            "path": protein.path,
+            "structure": protein.structure,
+            "format": protein.format,
+            "chains": self._get_safe_chains(protein),
+            "metadata": self._get_metadata(protein)
+        }
+        
+        # メタデータに水分子除去情報を追加
+        params["metadata"]["has_water"] = False
+        
+        return Protein(**params)
     
     def get_supported_methods(self) -> Dict[str, str]:
         """このサービスがサポートする準備方法のリストを取得する

@@ -7,18 +7,18 @@ import logging
 import re
 from typing import Optional, List, Dict, Any, Tuple
 
-from docking_automation.domain.docking.service.docking_service import DockingService
-from docking_automation.domain.docking.entity.docking_task import DockingTask, TaskStatus
-from docking_automation.domain.docking.entity.docking_result import DockingResult
-from docking_automation.domain.docking.entity.ligand import Ligand
-from docking_automation.domain.docking.entity.receptor import Receptor
-from docking_automation.domain.docking.value_object.docking_configuration import DockingConfiguration
-from docking_automation.domain.docking.value_object.docking_parameter import DockingParameters, DockingParameter, ParameterType
-from docking_automation.domain.docking.value_object.grid_box import GridBox
-from docking_automation.domain.docking.value_object.pose import Pose
-from docking_automation.domain.docking.value_object.score import Score, ScoreType
-from docking_automation.domain.molecule.value_object.molecule_structure import MoleculeStructure, Atom, Bond
-from docking_automation.domain.molecule.value_object.molecule_format import FormatType
+from docking_automation.docking.service.docking_service import DockingService
+from docking_automation.docking.entity.docking_task import DockingTask, TaskStatus
+from docking_automation.docking.entity.docking_result import DockingResult
+from docking_automation.docking.entity.ligand import Ligand
+from docking_automation.docking.entity.receptor import Receptor
+from docking_automation.docking.value_object.docking_configuration import DockingConfiguration
+from docking_automation.docking.value_object.docking_parameter import DockingParameters, DockingParameter, ParameterType
+from docking_automation.docking.value_object.grid_box import GridBox
+from docking_automation.docking.value_object.pose import Pose
+from docking_automation.docking.value_object.score import Score, ScoreType
+from docking_automation.molecule.value_object.molecule_structure import MoleculeStructure, Atom, Bond
+from docking_automation.molecule.value_object.molecule_format import FormatType
 
 # ロガーの設定
 logger = logging.getLogger(__name__)

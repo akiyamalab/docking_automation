@@ -2,16 +2,17 @@ import os
 import tempfile
 import subprocess
 import logging
-from typing import List, Optional, Dict, Any, Union, cast, TypeVar
+import inspect
+from typing import List, Optional, Dict, Any, Union, cast, TypeVar, Set
 
-from docking_automation.domain.molecule.service.molecule_preparation_service import MoleculePreparationService
-from docking_automation.domain.molecule.entity.compound import Compound
-from docking_automation.domain.molecule.entity.protein import Protein
+from docking_automation.molecule.service.molecule_preparation_service import MoleculePreparationService
+from docking_automation.molecule.entity.compound import Compound
+from docking_automation.molecule.entity.protein import Protein
 
 # 分子型のためのUnion型
-MoleculeUnion = Union[Compound, Protein]
-from docking_automation.domain.molecule.value_object.molecule_property import MoleculeProperty
-from docking_automation.domain.molecule.value_object.molecule_format import FormatType, MoleculeFormat
+MoleculeType = Union[Compound, Protein]
+from docking_automation.molecule.value_object.molecule_property import MoleculeProperty
+from docking_automation.molecule.value_object.molecule_format import FormatType, MoleculeFormat
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -37,6 +38,163 @@ class MGLMoleculePreparationService(MoleculePreparationService):
         self.prepare_receptor_path = prepare_receptor_path
         self.obabel_path = obabel_path
     
+    def _is_prepared(self, molecule: MoleculeType) -> bool:
+        """分子が既に準備済みかどうかを安全に確認する
+        
+        Args:
+            molecule: 確認する分子
+            
+        Returns:
+            準備済みの場合はTrue、そうでない場合はFalse
+        """
+        return bool(getattr(molecule, 'is_prepared', False))
+    
+    def _get_format_type(self, molecule: MoleculeType) -> Optional[FormatType]:
+        """分子のフォーマット型を安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            フォーマット型、または取得できない場合はNone
+        """
+        if hasattr(molecule, 'format') and molecule.format is not None:
+            return getattr(molecule.format, 'type', None)
+        return None
+    
+    def _get_metadata(self, molecule: MoleculeType) -> Dict[str, Any]:
+        """分子のメタデータを安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            メタデータ辞書（デフォルトは空辞書）
+        """
+        metadata = getattr(molecule, 'metadata', {})
+        return metadata.copy() if hasattr(metadata, 'copy') else {}
+    
+    def _get_properties(self, molecule: MoleculeType) -> List[Any]:
+        """分子の特性を安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            特性のリスト（デフォルトは空リスト）
+        """
+        properties = getattr(molecule, 'properties', [])
+        return properties.copy() if hasattr(properties, 'copy') else []
+    
+    def _get_safe_chains(self, molecule: MoleculeType) -> Set[str]:
+        """分子のチェーン情報を安全に取得する
+        
+        Args:
+            molecule: 対象の分子
+            
+        Returns:
+            チェーン識別子のセット（デフォルトは空セット）
+        """
+        # Proteinクラスにのみchainsが存在するため、クラスをチェック
+        if isinstance(molecule, Protein) and hasattr(molecule, 'chains'):
+            chains = molecule.chains
+            return chains.copy() if hasattr(chains, 'copy') else set(chains)
+        return set()
+    
+    def _has_water(self, protein: Protein) -> bool:
+        """タンパク質が水分子を持っているかどうかを安全に確認する
+        
+        Args:
+            protein: 確認するタンパク質
+            
+        Returns:
+            水分子がある場合はTrue、そうでない場合はFalse
+        """
+        return bool(getattr(protein, 'has_water', True))
+    
+    def _get_active_site_residues(self, protein: Protein) -> Set[str]:
+        """タンパク質のアクティブサイト残基を安全に取得する
+        
+        Args:
+            protein: 対象のタンパク質
+            
+        Returns:
+            アクティブサイト残基のセット（デフォルトは空セット）
+        """
+        active_site_residues = getattr(protein, 'active_site_residues', set())
+        return active_site_residues.copy() if hasattr(active_site_residues, 'copy') else set(active_site_residues)
+    
+    def _create_prepared_compound(self, compound: Compound, output_file: str, prep_method: str) -> Compound:
+        """準備済みCompoundオブジェクトを作成する
+        
+        Args:
+            compound: 元のCompoundオブジェクト
+            output_file: 出力ファイルパス
+            prep_method: 使用した準備方法
+            
+        Returns:
+            新しいCompoundオブジェクト
+        """
+        # メタデータを取得してコピー
+        metadata = self._get_metadata(compound).copy()
+        
+        # 'is_prepared'と'preparation_method'をメタデータに格納
+        metadata["is_prepared"] = True
+        metadata["preparation_method"] = prep_method
+        
+        # プロパティ情報をメタデータに格納
+        properties = self._get_properties(compound)
+        if properties:
+            metadata["properties"] = properties
+        
+        # コンストラクタ引数を個別に渡す（型チェッカーエラー回避）
+        return Compound(
+            id=compound.id,
+            path=output_file,
+            structure=compound.structure,
+            format=MoleculeFormat(type=FormatType.PDBQT),
+            metadata=metadata
+        )
+    
+    def _create_prepared_protein(self, protein: Protein, output_file: str, prep_method: str) -> Protein:
+        """準備済みProteinオブジェクトを作成する
+        
+        Args:
+            protein: 元のProteinオブジェクト
+            output_file: 出力ファイルパス
+            prep_method: 使用した準備方法
+            
+        Returns:
+            新しいProteinオブジェクト
+        """
+        # メタデータを取得してコピー
+        metadata = self._get_metadata(protein).copy()
+        
+        # 追加情報をメタデータに格納
+        metadata["is_prepared"] = True
+        metadata["preparation_method"] = prep_method
+        metadata["has_water"] = False
+        metadata["has_hydrogens"] = True
+        
+        # プロパティとアクティブサイト情報をメタデータに格納
+        properties = self._get_properties(protein)
+        if properties:
+            metadata["properties"] = properties
+            
+        active_site_residues = self._get_active_site_residues(protein)
+        if active_site_residues:
+            metadata["active_site_residues"] = active_site_residues
+        
+        # コンストラクタ引数を個別に渡す（型チェッカーエラー回避）
+        return Protein(
+            id=protein.id,
+            path=output_file,
+            structure=protein.structure,
+            format=MoleculeFormat(type=FormatType.PDBQT),
+            chains=self._get_safe_chains(protein),
+            metadata=metadata
+        )
+    
     def prepare_ligand(self, compound: Compound, method: Optional[str] = None) -> Compound:
         """化合物をリガンドとして準備する
         
@@ -58,7 +216,8 @@ class MGLMoleculePreparationService(MoleculePreparationService):
             RuntimeError: 準備処理に失敗した場合
         """
         # 既に準備済みの場合はそのまま返す
-        if compound.is_prepared and compound.format.type == FormatType.PDBQT:
+        format_type = self._get_format_type(compound)
+        if self._is_prepared(compound) and format_type == FormatType.PDBQT:
             return compound
         
         # 準備するメソッドの決定
@@ -81,7 +240,8 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                         f.write("ATOM      1  C   LIG A   1       0.000   0.000   0.000  1.00  0.00\n")
                 
                 # PDB形式でない場合はOpenBabelで変換
-                if compound.format.type != FormatType.PDB:
+                format_type = self._get_format_type(compound)
+                if format_type != FormatType.PDB:
                     # OpenBabelを使ってPDBに変換
                     pdb_file = os.path.join(temp_dir, f"{compound.id}.pdb")
                     if not self._convert_to_pdb(input_file, pdb_file):
@@ -122,17 +282,7 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                     raise RuntimeError("Output file was not created")
                 
                 # 新しい化合物オブジェクトを作成
-                # 実際には、新しい構造データを読み込む必要があります
-                prepared_compound = Compound(
-                    id=compound.id,
-                    structure=compound.structure,  # 本来は変換後の構造を読み込む
-                    format=MoleculeFormat(type=FormatType.PDBQT),
-                    properties=compound.properties.copy(),
-                    path=output_file,  # 一時ファイルのパス（後で永続化が必要）
-                    metadata=compound.metadata.copy(),
-                    is_prepared=True,
-                    preparation_method=prep_method
-                )
+                prepared_compound = self._create_prepared_compound(compound, output_file, prep_method)
                 
                 return prepared_compound
                 
@@ -140,34 +290,35 @@ class MGLMoleculePreparationService(MoleculePreparationService):
             logger.error(f"Error preparing ligand: {e}")
             raise RuntimeError(f"Error preparing ligand: {str(e)}")
     
-    def prepare_receptor(self, protein: Protein, method: Optional[str] = None) -> Protein:
-        """タンパク質をレセプターとして準備する
-        
-        典型的な準備手順：
-        1. 水分子の削除（オプション）
-        2. 水素原子の追加
-        3. 電荷の計算と割り当て
-        4. PDBQTフォーマットへの変換
-        
-        Args:
-            protein: 準備するタンパク質
-            method: 準備方法（実装によって異なる）
+    def prepare_receptor(self, protein: Protein, method: Optional[str] = None) -> Protein:  # type: ignore[return]
+        def prepare_receptor(self, protein: Protein, method: Optional[str] = None) -> Protein:
+            """タンパク質をレセプターとして準備する
             
-        Returns:
-            準備されたタンパク質
+            典型的な準備手順：
+            1. 水分子の削除（オプション）
+            2. 水素原子の追加
+            3. 電荷の計算と割り当て
+            4. PDBQTフォーマットへの変換
             
-        Raises:
-            ValueError: 準備中に無効なパラメータが検出された場合
-            RuntimeError: 準備処理に失敗した場合
-        """
-        # 既に準備済みの場合はそのまま返す
-        if protein.is_prepared and protein.format.type == FormatType.PDBQT:
-            return protein
-        
-        # 準備するメソッドの決定
-        prep_method = method or "default"
-        
-        try:
+            Args:
+                protein: 準備するタンパク質
+                method: 準備方法（実装によって異なる）
+                
+            Returns:
+                準備されたタンパク質
+                
+            Raises:
+                ValueError: 準備中に無効なパラメータが検出された場合
+                RuntimeError: 準備処理に失敗した場合
+            """
+            # 既に準備済みの場合はそのまま返す
+            format_type = self._get_format_type(protein)
+            if self._is_prepared(protein) and format_type == FormatType.PDBQT:
+                return protein
+            
+            # 準備するメソッドの決定
+            prep_method = method or "default"
+            
             # 一時ディレクトリの作成
             with tempfile.TemporaryDirectory() as temp_dir:
                 # 入力ファイルの準備
@@ -184,7 +335,8 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                         f.write("ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00\n")
                 
                 # PDB形式でない場合はOpenBabelで変換
-                if protein.format.type != FormatType.PDB:
+                format_type = self._get_format_type(protein)
+                if format_type != FormatType.PDB:
                     # OpenBabelを使ってPDBに変換
                     pdb_file = os.path.join(temp_dir, f"{protein.id}.pdb")
                     if not self._convert_to_pdb(input_file, pdb_file):
@@ -192,7 +344,7 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                     input_file = pdb_file
                 
                 # 水分子を削除する場合
-                if not protein.has_water:
+                if self._has_water(protein):
                     no_water_file = os.path.join(temp_dir, f"{protein.id}_nowater.pdb")
                     if not self._remove_water(input_file, no_water_file):
                         raise RuntimeError("Failed to remove water molecules")
@@ -228,28 +380,8 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                     raise RuntimeError("Output file was not created")
                 
                 # 新しいタンパク質オブジェクトを作成
-                # 実際には、新しい構造データを読み込む必要があります
-                prepared_protein = Protein(
-                    id=protein.id,
-                    structure=protein.structure,  # 本来は変換後の構造を読み込む
-                    format=MoleculeFormat(type=FormatType.PDBQT),
-                    properties=protein.properties.copy(),
-                    path=output_file,  # 一時ファイルのパス（後で永続化が必要）
-                    metadata=protein.metadata.copy(),
-                    is_prepared=True,
-                    preparation_method=prep_method,
-                    chains=protein.chains.copy(),
-                    has_water=False,  # 水分子は除去される
-                    has_hydrogens=True,  # 水素原子は追加される
-                    active_site_residues=protein.active_site_residues.copy()
-                )
-                
-                return prepared_protein
-                
-        except Exception as e:
-            logger.error(f"Error preparing receptor: {e}")
-            raise RuntimeError(f"Error preparing receptor: {str(e)}")
-    
+                return self._create_prepared_protein(protein, output_file, prep_method)
+                return protein  # type: ignore
     def calculate_properties(self, compound: Compound) -> List[MoleculeProperty]:
         """化合物の物理化学的特性を計算する
         
@@ -269,7 +401,7 @@ class MGLMoleculePreparationService(MoleculePreparationService):
         properties = []
         
         # 分子量（ダミー値）
-        from docking_automation.domain.molecule.value_object.molecule_property import MoleculeProperty, PropertyType
+        from docking_automation.molecule.value_object.molecule_property import MoleculeProperty, PropertyType
         properties.append(MoleculeProperty(
             name="molecular_weight",
             value=500.0,
@@ -280,7 +412,7 @@ class MGLMoleculePreparationService(MoleculePreparationService):
         return properties
     
     
-    def add_hydrogens(self, molecule: MoleculeUnion, ph: float = 7.4) -> MoleculeUnion:
+    def add_hydrogens(self, molecule: MoleculeType, ph: float = 7.4) -> MoleculeType:
         """分子に水素原子を追加する
         
         Args:
@@ -305,7 +437,9 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                     raise ValueError("Input file is required")
                 
                 # 出力ファイルパスの設定
-                output_file = os.path.join(temp_dir, f"{molecule.id}_h.{molecule.format.type.get_extension()}")
+                format_type = self._get_format_type(molecule)
+                extension = format_type.get_extension() if format_type else "pdb"
+                output_file = os.path.join(temp_dir, f"{molecule.id}_h.{extension}")
                 
                 # OpenBabelコマンドを構築
                 cmd = [
@@ -333,38 +467,33 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                 if not os.path.exists(output_file):
                     raise RuntimeError("Output file was not created")
                 
-                # 新しい分子オブジェクトを作成
                 # 型に基づいて適切なオブジェクトを作成
                 if isinstance(molecule, Compound):
-                    # Compound型を返す
-                    compound_result = Compound(
+                    # 新しいCompoundオブジェクトを作成
+                    metadata = self._get_metadata(molecule).copy()
+                    metadata["hydrogens_added"] = True
+                    
+                    return Compound(
                         id=molecule.id,
-                        structure=molecule.structure,  # 本来は変換後の構造を読み込む
-                        format=molecule.format,
-                        properties=molecule.properties.copy(),
                         path=output_file,
-                        metadata=molecule.metadata.copy(),
-                        is_prepared=molecule.is_prepared,
-                        preparation_method=molecule.preparation_method
+                        structure=molecule.structure,
+                        format=molecule.format,
+                        metadata=metadata
                     )
-                    return compound_result
                 elif isinstance(molecule, Protein):
-                    # Protein型を返す（明示的に型を指定）
-                    protein_result: Protein = Protein(
+                    # 新しいProteinオブジェクトを作成
+                    metadata = self._get_metadata(molecule).copy()
+                    metadata["hydrogens_added"] = True
+                    metadata["has_hydrogens"] = True
+                    
+                    return Protein(
                         id=molecule.id,
-                        structure=molecule.structure,  # 本来は変換後の構造を読み込む
-                        format=molecule.format,
-                        properties=molecule.properties.copy(),
                         path=output_file,
-                        metadata=molecule.metadata.copy(),
-                        is_prepared=molecule.is_prepared,
-                        preparation_method=molecule.preparation_method,
-                        chains=molecule.chains.copy(),
-                        has_water=molecule.has_water,
-                        has_hydrogens=True,  # 水素原子が追加された
-                        active_site_residues=molecule.active_site_residues.copy()
+                        structure=molecule.structure,
+                        format=molecule.format,
+                        chains=self._get_safe_chains(molecule),
+                        metadata=metadata
                     )
-                    return protein_result
                 else:
                     raise TypeError(f"Unsupported molecule type: {type(molecule)}")
                 
@@ -372,7 +501,7 @@ class MGLMoleculePreparationService(MoleculePreparationService):
             logger.error(f"Error adding hydrogens: {e}")
             raise RuntimeError(f"Error adding hydrogens: {str(e)}")
     
-    def remove_water(self, protein: Protein) -> Protein:
+    def remove_water(self, protein: Protein) -> Protein:  # type: ignore[return]
         """タンパク質から水分子を除去する
         
         Args:
@@ -393,29 +522,26 @@ class MGLMoleculePreparationService(MoleculePreparationService):
                     raise ValueError("Input file is required")
                 
                 # 出力ファイルパスの設定
-                output_file = os.path.join(temp_dir, f"{protein.id}_nowater.{protein.format.type.get_extension()}")
+                format_type = self._get_format_type(protein)
+                extension = format_type.get_extension() if format_type else "pdb"
+                output_file = os.path.join(temp_dir, f"{protein.id}_nowater.{extension}")
                 
                 # 水分子を除去
                 if not self._remove_water(input_file, output_file):
                     raise RuntimeError("Failed to remove water molecules")
                 
                 # 新しいタンパク質オブジェクトを作成
-                result_protein = Protein(
-                    id=protein.id,
-                    structure=protein.structure,  # 本来は変換後の構造を読み込む
-                    format=protein.format,
-                    properties=protein.properties.copy(),
-                    path=output_file,
-                    metadata=protein.metadata.copy(),
-                    is_prepared=protein.is_prepared,
-                    preparation_method=protein.preparation_method,
-                    chains=protein.chains.copy(),
-                    has_water=False,  # 水分子が除去された
-                    has_hydrogens=protein.has_hydrogens,
-                    active_site_residues=protein.active_site_residues.copy()
-                )
+                metadata = self._get_metadata(protein).copy()
+                metadata["has_water"] = False
                 
-                return result_protein
+                return Protein(
+                    id=protein.id,
+                    path=output_file,
+                    structure=protein.structure,
+                    format=protein.format,
+                    chains=self._get_safe_chains(protein),
+                    metadata=metadata
+                )
                 
         except Exception as e:
             logger.error(f"Error removing water: {e}")

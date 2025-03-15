@@ -7,8 +7,8 @@
 import logging
 from typing import Dict, Any, Optional
 
-from docking_automation.domain.molecule.service.molecule_preparation_service import MoleculePreparationService
-from docking_automation.domain.docking.service.docking_service import DockingService
+from docking_automation.molecule.service.molecule_preparation_service import MoleculePreparationService
+from docking_automation.docking.service.docking_service import DockingService
 from docking_automation.infrastructure.tools.mock.mock_molecule_preparation_service import MockMoleculePreparationService
 from docking_automation.infrastructure.tools.mock.mock_docking_service import MockDockingService
 from docking_automation.application.workflows.simple_docking_workflow import SimpleDockingWorkflow

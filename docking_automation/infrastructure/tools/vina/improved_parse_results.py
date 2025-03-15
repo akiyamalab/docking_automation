@@ -2,9 +2,9 @@ import re
 import logging
 from typing import List, Tuple, Optional, Any
 
-from docking_automation.domain.docking.value_object.pose import Pose
-from docking_automation.domain.docking.value_object.score import Score
-from docking_automation.domain.molecule.value_object.molecule_structure import MoleculeStructure, Atom, Bond
+from docking_automation.docking.value_object.pose import Pose
+from docking_automation.docking.value_object.score import Score
+from docking_automation.molecule.value_object.molecule_structure import MoleculeStructure, Atom, Bond
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
