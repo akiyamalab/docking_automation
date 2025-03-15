@@ -1,0 +1,64 @@
+# Python 関連
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# VS Code 関連
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 実行時生成ファイル
+batch_test_results/
+direct_docking_results/
+meeko_vina_results/
+simple_docking_results/
+vina_output/
+output/
+prepared_ligands/
+result/
+
+# 入出力データファイル
+*.sdf
+*.pdbqt
+*.pdb
+tmp.*
+
+# 仮想環境
+venv/
+.env/
+.venv/
+ENV/
+
+# ログ
+*.log
+
+# システム固有ファイル
+.DS_Store
+Thumbs.db
+
+# ドキュメント生成ファイル
+docs/build/
+
+# そのほか不要ファイル
+.pytest_cache/
+.coverage
+htmlcov/

@@ -1,0 +1,1 @@
+# molecule/service パッケージ
