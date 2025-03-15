@@ -3,7 +3,7 @@
 このモジュールは、ドッキング計算のパラメータ集合を表現する値オブジェクトを提供します。
 """
 
-from typing import Dict, List, Optional, Any, Iterator
+from typing import Dict, List, Optional, Any, Iterator, Union
 
 from docking_automation.docking.value_object.docking_parameter import DockingParameter
 
@@ -37,7 +37,7 @@ class DockingParameters:
         """
         self._parameters[parameter.name] = parameter
     
-    def get(self, name: str, default: Any = None) -> Optional[DockingParameter]:
+    def get(self, name: str, default: Any = None) -> Union[DockingParameter, Any]:
         """名前を指定してパラメータを取得する
         
         Args:

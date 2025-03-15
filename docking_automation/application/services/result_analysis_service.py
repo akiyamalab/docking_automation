@@ -6,10 +6,11 @@
 import os
 import logging
 import statistics
-from typing import List, Dict, Any, Optional, Union
-import matplotlib.pyplot as plt
-import numpy as np
 from pathlib import Path
+from typing import List, Dict, Any, Optional, Union, cast, Tuple
+
+# サードパーティモジュールのインポート
+import matplotlib.pyplot as plt  # type: ignore
 
 from docking_automation.docking.entity.docking_result import DockingResult
 
@@ -38,7 +39,7 @@ class ResultAnalysisService:
         output_path: Union[str, Path],
         bins: int = 20,
         title: str = 'ドッキングスコア分布',
-        figsize: tuple = (10, 6),
+        figsize: Tuple[float, float] = (10, 6),
         color: str = 'skyblue',
         dpi: int = 300
     ) -> str:

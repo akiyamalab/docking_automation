@@ -4,6 +4,10 @@
 """
 
 from enum import Enum, auto
+from typing import Any, Union, TypeVar, cast
+
+
+T = TypeVar('T', int, float, bool, str)
 
 
 class ParameterType(Enum):
@@ -18,7 +22,7 @@ class ParameterType(Enum):
     BOOLEAN = auto()  # ブーリアン型
     
     @classmethod
-    def from_value(cls, value) -> 'ParameterType':
+    def from_value(cls, value: object) -> 'ParameterType':
         """値の型に基づいてパラメータ型を推定する
         
         Args:
@@ -36,7 +40,7 @@ class ParameterType(Enum):
         else:
             return cls.STRING
     
-    def validate_value(self, value) -> bool:
+    def validate_value(self, value: object) -> bool:
         """値がこの型に適合するかどうかを検証する
         
         Args:
@@ -45,17 +49,17 @@ class ParameterType(Enum):
         Returns:
             型に適合する場合はTrue、適合しない場合はFalse
         """
-        if self == self.INTEGER:
+        if self is ParameterType.INTEGER:
             return isinstance(value, int) and not isinstance(value, bool)
-        elif self == self.FLOAT:
+        elif self is ParameterType.FLOAT:
             return isinstance(value, float)
-        elif self == self.BOOLEAN:
+        elif self is ParameterType.BOOLEAN:
             return isinstance(value, bool)
-        elif self == self.STRING:
+        elif self is ParameterType.STRING:
             return isinstance(value, str)
         return False
     
-    def convert_value(self, value):
+    def convert_value(self, value: Any) -> Union[int, float, bool, str]:
         """値をこの型に変換する
         
         可能であれば値をこの型に変換します。
@@ -70,20 +74,20 @@ class ParameterType(Enum):
         Raises:
             ValueError: 値を変換できない場合
         """
-        if self == self.INTEGER:
-            return int(value)
-        elif self == self.FLOAT:
-            return float(value)
-        elif self == self.BOOLEAN:
+        if self is ParameterType.INTEGER:
+            return int(cast(Union[str, int, float], value))
+        elif self is ParameterType.FLOAT:
+            return float(cast(Union[str, int, float], value))
+        elif self is ParameterType.BOOLEAN:
             if isinstance(value, str):
-                value = value.lower()
-                if value in ('true', 'yes', '1', 'on'):
+                value_str = value.lower()
+                if value_str in ('true', 'yes', '1', 'on'):
                     return True
-                if value in ('false', 'no', '0', 'off'):
+                if value_str in ('false', 'no', '0', 'off'):
                     return False
-                raise ValueError(f"文字列 '{value}' をブーリアン値に変換できません")
+                raise ValueError(f"文字列 '{value_str}' をブーリアン値に変換できません")
             return bool(value)
-        elif self == self.STRING:
+        elif self is ParameterType.STRING:
             return str(value)
         
         raise ValueError(f"値 '{value}' を型 {self.name} に変換できません")

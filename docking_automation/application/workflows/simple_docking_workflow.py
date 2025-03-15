@@ -7,13 +7,10 @@ from typing import Dict, Any, Optional, List, Tuple
 from docking_automation.molecule import (
     Compound,
     Protein,
-    FormatType,
-    MoleculeFormat,
-    MoleculeStructure,
-    Atom,
-    Bond,
     MoleculePreparationService,
 )
+from docking_automation.molecule.value_object.molecule_format import FormatType, MoleculeFormat
+from docking_automation.molecule.value_object.molecule_structure import Atom, Bond, MoleculeStructure
 
 # ドッキングモジュール
 from docking_automation.docking import (

@@ -6,10 +6,14 @@
 import os
 import uuid
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, TYPE_CHECKING, cast
 from pathlib import Path
 import concurrent.futures
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
+else:
+    import pandas as pd
 
 # 分子モジュール
 from docking_automation.molecule.entity.compound import Compound
@@ -23,7 +27,9 @@ from docking_automation.docking.entity.docking_task import DockingTask
 from docking_automation.docking.entity.docking_result import DockingResult
 from docking_automation.docking.value_object.docking_configuration import DockingConfiguration
 from docking_automation.docking.value_object.grid_box import GridBox
-from docking_automation.docking.value_object.docking_parameter import DockingParameter, DockingParameters, ParameterType
+from docking_automation.docking.value_object.docking_parameter import DockingParameter, ParameterType as DPParameterType
+from docking_automation.docking.value_object.docking_parameters import DockingParameters
+# あえて別の名前でインポートを避ける
 from docking_automation.docking.service.docking_service import DockingService
 
 # 結果解析モジュール（新規追加）
@@ -150,6 +156,7 @@ class BatchDockingWorkflow:
                 docking_configuration = docking_configuration.with_grid_box(
                     receptor.get_suggested_grid_box()
                 )
+            return docking_configuration
         else:
             # 設定から構築
             grid_config = config.get('grid_box', {})
@@ -164,18 +171,21 @@ class BatchDockingWorkflow:
             
             # パラメータの設定
             params_config = config.get('parameters', {})
-            parameters = DockingParameters()
+            params = DockingParameters()
             for name, value in params_config.items():
-                param_type = ParameterType.INTEGER if isinstance(value, int) else ParameterType.FLOAT
-                parameters.add(DockingParameter(name=name, value=value, parameter_type=param_type))
+                # mypy向け型ヒント
+                if isinstance(value, int):
+                    pt = cast(DPParameterType, DPParameterType.INTEGER)
+                else:
+                    pt = cast(DPParameterType, DPParameterType.FLOAT)
+                params.add(DockingParameter(name=name, value=value, parameter_type=pt))
             
-            docking_configuration = DockingConfiguration(
+            # 設定を作成して返す
+            return DockingConfiguration(
                 grid_box=grid_box,
-                parameters=parameters,
+                parameters=cast(Any, params),
                 name=config.get('name', 'バッチドッキング設定')
             )
-        
-        return docking_configuration
     
     def _run_parallel_docking(
         self,
