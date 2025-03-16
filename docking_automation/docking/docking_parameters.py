@@ -9,20 +9,22 @@ class CommonDockingParameters:
     全てのドッキングツールにおいて共通しているパラメータを保持するクラス。
     """
     def __init__(
-        self, 
+        self,
         protein: PreprocessedProtein,
         compound_set: PreprocessedCompoundSet,
-        protein_file_path, 
-        compound_set_file_path,
         grid_box,
     ):
+        """
+        CommonDockingParametersオブジェクトを初期化する。
+        
+        Args:
+            protein: 前処理済みのタンパク質
+            compound_set: 前処理済みの化合物セット
+            grid_box: ドッキング計算の領域
+        """
         self.protein = protein
         self.compound_set = compound_set
-        self.protein_file_path = protein_file_path
-        self.compound_set_file_path = compound_set_file_path
         self.grid_box = grid_box
-        
-        
     
 # 値オブジェクト
 class SpecificDockingParametersABC(ABC):

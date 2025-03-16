@@ -1,9 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Any
-
-from openbabel import openbabel as ob
-from rdkit import Chem
-
+from typing import List, Any
 from docking_automation.molecule.protein import Protein
 from docking_automation.molecule.compound_set import CompoundSet
 

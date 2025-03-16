@@ -1,6 +1,5 @@
-from typing import List, Dict, Tuple, Callable, Any
-from sortedcontainers import SortedList
-
+from typing import List, Dict, Tuple, Callable
+from sortedcontainers import SortedList # type: ignore
 from .docking_result import DockingResult
 
 

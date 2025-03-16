@@ -1,3 +1,4 @@
+# type: ignore
 from setuptools import setup, find_packages
 
 setup(
@@ -23,6 +24,7 @@ setup(
             "flake8>=4.0.0",
             "black>=22.3.0",
             "sphinx>=5.0.0",
+            "types-setuptools",  # setuptoolsの型定義
         ],
         "chem": [
             "rdkit>=2022.3.1",        # 化学情報学ライブラリ（conda経由でインストール推奨）

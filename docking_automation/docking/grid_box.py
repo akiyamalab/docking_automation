@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 
@@ -12,11 +12,11 @@ class GridBox:
     
     def __init__(
         self,
-        center: Optional[npt.NDArray[np.float64]] = None,
+        center: Optional[Union[npt.NDArray[np.float64], Tuple[float, float, float]]] = None,
         center_x: Optional[float] = None,
         center_y: Optional[float] = None,
         center_z: Optional[float] = None,
-        size: Optional[npt.NDArray[np.float64]] = None,
+        size: Optional[Union[npt.NDArray[np.float64], Tuple[float, float, float]]] = None,
         size_x: Optional[float] = None,
         size_y: Optional[float] = None,
         size_z: Optional[float] = None
@@ -25,14 +25,24 @@ class GridBox:
         GridBoxオブジェクトを初期化する。
         
         Args:
-            center: 中心座標
+            center: 中心座標（NDArrayまたは(x, y, z)のタプル）
             center_x: 中心のx座標
             center_y: 中心のy座標
             center_z: 中心のz座標
-            size: サイズ
+            size: サイズ（NDArrayまたは(x, y, z)のタプル）
             size_x: x方向のサイズ
             size_y: y方向のサイズ
             size_z: z方向のサイズ
+        
+        Examples:
+            >>> # タプルを使った初期化
+            >>> grid_box = GridBox(center=(10.0, 10.0, 10.0), size=(20.0, 20.0, 20.0))
+            >>>
+            >>> # 個別の座標を使った初期化
+            >>> grid_box = GridBox(
+            ...     center_x=10.0, center_y=10.0, center_z=10.0,
+            ...     size_x=20.0, size_y=20.0, size_z=20.0
+            ... )
         """
         raise NotImplementedError()
     
