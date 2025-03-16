@@ -23,6 +23,7 @@ from docking_automation.docking.value_object.grid_box import GridBox
 from docking_automation.docking.value_object.docking_configuration import DockingConfiguration
 from docking_automation.docking.value_object.docking_parameter import DockingParameter, ParameterType
 from docking_automation.docking.value_object.docking_parameters import DockingParameters
+from docking_automation.docking.value_object.score import ScoreType
 from docking_automation.docking.value_object.pose import Pose
 from docking_automation.docking.value_object.score import Score
 from docking_automation.docking.service.docking_service import DockingService
@@ -30,19 +31,38 @@ from docking_automation.docking.service.docking_service import DockingService
 # モック実装を作成（本来はVinaのサービスを使用するが、ここではモックで代用）
 class MockDockingService(DockingService):
     """デモ用のモックドッキングサービス"""
-    
     def execute(self, task: DockingTask) -> DockingResult:
         """ドッキング計算を実行（モック）"""
         print(f"[モック] {task.ligand.name}のドッキング計算を実行中...")
         
-        # ランダムなスコアを生成（score_typeはenumのため文字列ではなく数値を使用）
-        scores = [Score(value=random.uniform(-12.0, -5.0), score_type=1, name=f"score_{i+1}") for i in range(3)]
+        # ランダムなスコアを生成
+        from docking_automation.docking.value_object.score import ScoreType
+        scores = [Score(
+            value=random.uniform(-12.0, -5.0),
+            score_type=ScoreType.BINDING_AFFINITY,
+            name=f"score_{i+1}"
+        ) for i in range(3)]
         
         # モックのポーズを生成
         poses = []
         for i in range(3):
-            pose_content = f"ATOM  12345  CA  ALA A  42      {task.configuration.grid_box.center_x:.3f} {task.configuration.grid_box.center_y:.3f} {task.configuration.grid_box.center_z:.3f}"
-            poses.append(Pose(structure=pose_content, rank=i+1))
+            # MoleculeStructureとAtomを作成してポーズにセット
+            from docking_automation.molecule.value_object.molecule_structure import MoleculeStructure, Atom
+            
+            # モック用の原子を作成
+            atoms = [
+                Atom(
+                    atom_id=j+1,
+                    element="C",
+                    x=task.configuration.grid_box.center_x + (j * 0.5),
+                    y=task.configuration.grid_box.center_y + (j * 0.2),
+                    z=task.configuration.grid_box.center_z + (j * 0.3),
+                )
+                for j in range(10)
+            ]
+            
+            structure = MoleculeStructure(atoms=atoms, bonds=[])
+            poses.append(Pose(structure=structure, rank=i+1))
         
         # 結果を返す（created_atは浮動小数点のタイムスタンプが必要）
         import time
@@ -200,7 +220,14 @@ for i, mol in enumerate(mols):
     # 結果の保存
     result_path = output_dir / f"docking_result_{i+1}.pdbqt"
     with open(result_path, "w") as f:
-        f.write(str(result.poses[0].structure))
+        # MoleculeStructureからPDBQT形式のテキストを生成
+        structure = result.poses[0].structure
+        atoms = structure.atoms
+        f.write("MODEL 1\n")
+        for atom in atoms:
+            pdbqt_line = f"ATOM  {atom.atom_id:5d}  {atom.element:<3s} LIG A   1    {atom.x:8.3f}{atom.y:8.3f}{atom.z:8.3f}  1.00  0.00    0.000 {atom.element}\n"
+            f.write(pdbqt_line)
+        f.write("ENDMDL\n")
     
     print(f"結果を {result_path} に保存しました")
 

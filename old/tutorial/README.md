@@ -2,6 +2,43 @@
 
 このディレクトリには、docking_automationパッケージの使用方法を示す例示コードが含まれています。各サンプルスクリプトは、パッケージの異なる機能を紹介しています。
 
+## 新機能: バッチドッキング計算
+
+新たに追加された`run_batch_docking.py`スクリプトは、複数の化合物(リガンド)に対して効率的にドッキング計算を実行するための機能を提供します。このスクリプトを使用することで、以下のことが可能になります：
+
+- 複数の化合物を一度に処理
+- 並列処理による計算時間の短縮
+- コマンドライン引数による柔軟な設定
+- 結果のランキングと視覚化（グラフ）
+- オプションでSDF形式への変換
+
+### 使用例
+
+```bash
+# 基本的な使用方法
+python tutorial/run_batch_docking.py --receptor input/ALDR/receptor.pdb --ligands "input/ALDR/ligands/*.sdf" --output output/batch
+
+# ドッキング中心と並列処理を指定
+python tutorial/run_batch_docking.py --receptor input/ALDR/receptor.pdb --ligands "input/ALDR/ligands/*.sdf" --center 16.645 -6.714 14.124 --jobs 4
+
+# 結果をSDFに変換
+python tutorial/run_batch_docking.py --receptor input/ALDR/receptor.pdb --ligands "input/ALDR/ligands/*.sdf" --convert-sdf
+```
+
+### コマンドラインオプション
+
+- `--receptor`, `-r`: レセプター（タンパク質）のファイルパス（必須）
+- `--ligands`, `-l`: リガンドファイルのパス（ワイルドカード使用可）（必須）
+- `--output`, `-o`: 結果の出力ディレクトリ（デフォルト: output/batch）
+- `--center`, `-c`: ドッキング中心座標 (x y z)
+- `--size`, `-s`: ボックスサイズ (x y z)（デフォルト: 20.0 20.0 20.0）
+- `--exhaustiveness`, `-e`: 探索の徹底度（デフォルト: 8）
+- `--num-modes`, `-n`: 出力するポーズ数（デフォルト: 9）
+- `--cpu`: 使用するCPU数（デフォルト: 1）
+- `--jobs`, `-j`: 並列実行数（デフォルト: 1）
+- `--max-ligands`, `-m`: 処理する最大リガンド数
+- `--convert-sdf`: 結果をSDFに変換
+
 ## 含まれるサンプルコード
 
 1. **run_docking_example.py**
