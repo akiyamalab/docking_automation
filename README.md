@@ -2,6 +2,107 @@
 
 分子ドッキング計算を自動化するためのドメイン駆動設計フレームワーク
 
+## 実装状況
+
+現在、以下の実装が完了しています：
+
+1. **基本クラス構造の実装**：
+   - 新規作成: docking_automation/converters/molecule_converter.py
+   - 新規作成: docking_automation/infrastructure/executor/task.py
+   - 新規作成: docking_automation/infrastructure/executor/task_manager.py
+   - 新規作成: docking_automation/docking/docking_result_collection.py
+   - 修正: docking_automation/molecule/protein.py
+   - 修正: docking_automation/molecule/compound_set.py
+   - 修正: docking_automation/docking/docking_result.py
+   - 修正: docking_automation/docking/grid_box.py
+   - 修正: docking_automation/infrastructure/repositories/docking_result_repository.py
+   - 修正: docking_automation/infrastructure/executor/executor.py
+   - 修正: docking_automation/infrastructure/executor/sequential_executor.py
+   - 修正: docking_automation/infrastructure/executor/slurm_executor.py
+
+2. **テストフレームワークの実装**：
+   - tests/molecule/test_protein.py
+   - tests/molecule/test_compound_set.py
+   - tests/converters/test_molecule_converter.py
+   - tests/docking/test_grid_box.py
+   - tests/docking/test_docking_result.py
+   - tests/docking/test_docking_result_collection.py
+   - tests/infrastructure/repositories/test_docking_result_repository.py
+   - tests/infrastructure/executor/test_task.py
+   - tests/infrastructure/executor/test_task_manager.py
+   - tests/infrastructure/executor/test_sequential_executor.py
+   - tests/infrastructure/executor/test_slurm_executor.py
+   - tests/integration/test_docking_workflow.py
+   - tests/conftest.py
+
+現時点では、すべてのメソッドはNotImplementedErrorを発生させるようになっており、具体的な実装は行っていません。これにより、設計の骨組みとテストフレームワークが整い、今後の実装作業の基盤が整いました。
+
+詳細な設計と実装状況については、[docking_automation_design_improvements.md](docking_automation_design_improvements.md)を参照してください。
+
+## インストール方法
+
+### 依存関係
+
+本プロジェクトは以下の依存関係を持ちます：
+
+- Python 3.8以上
+- RDKit: 化学情報学ライブラリ
+- OpenBabel: 分子ファイル形式変換
+- meeko: リガンド準備（AutoDock Vina用）
+- sortedcontainers: ソート済みコンテナ
+- pytest: テストフレームワーク
+
+### インストール手順
+
+開発モードでインストールするには、以下のコマンドを実行します：
+
+```bash
+# 基本パッケージのインストール
+pip install -e .
+
+# 開発用依存関係を含めたインストール
+pip install -e .[dev]
+
+# 化学情報学ライブラリを含めたインストール
+pip install -e .[chem]
+
+# すべての依存関係を含めたインストール
+pip install -e .[full]
+```
+
+## 開発環境のセットアップ
+
+1. リポジトリをクローン：
+   ```bash
+   git clone https://github.com/yourusername/docking_automation.git
+   cd docking_automation
+   ```
+
+2. 依存関係のインストール：
+   ```bash
+   pip install -e .[full,dev]
+   ```
+
+3. テストの実行：
+   ```bash
+   pytest
+   ```
+
+## テストの実行
+
+テストを実行するには、以下のコマンドを使用します：
+
+```bash
+# すべてのテストを実行
+pytest
+
+# 特定のテストファイルを実行
+pytest tests/molecule/test_protein.py
+
+# カバレッジレポートを生成
+pytest --cov=docking_automation
+```
+
 ## 1. プロジェクトビジョン
 
 ### 1.1 目的と背景

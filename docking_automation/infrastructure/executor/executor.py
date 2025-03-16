@@ -1,8 +1,23 @@
-from abc import ABC
+from abc import ABC, abstractmethod
+from typing import Any
+
+from .task import Task
 
 # インフラ
 class ExecutorABC(ABC):
     """
-    ドッキング計算を行うための抽象基底クラス。
+    タスクを実行するための抽象基底クラス。
     """
-    ...
+    
+    @abstractmethod
+    def execute(self, task: Task) -> Any:
+        """
+        タスクを実行する。
+        
+        Args:
+            task: 実行するタスク
+            
+        Returns:
+            タスクの実行結果
+        """
+        pass

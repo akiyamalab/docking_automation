@@ -13,10 +13,12 @@ setup(
         "dask>=2022.5.0",      # 並列計算
         "matplotlib>=3.5.0",   # グラフ描画
         "scipy>=1.8.0",        # 科学計算
+        "sortedcontainers>=2.4.0",  # ソート済みコンテナ
     ],
     extras_require={
         "dev": [
             "pytest>=7.0.0",
+            "pytest-cov>=4.1.0",
             "mypy>=0.960",
             "flake8>=4.0.0",
             "black>=22.3.0",
