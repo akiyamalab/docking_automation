@@ -1,18 +1,22 @@
-FROM continuumio/anaconda3:2023.09-0
+FROM condaforge/miniforge3:24.11.3-2
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update
 RUN apt install -y wget
 
+#### Anaconda ####
+RUN conda install -y -c conda-forge openbabel=3.1.1
+
 #### AutoDock Vina ####
-ENV ADVINA_HOME /advina
-ENV ADVINA_VER  1.1.2
-ENV PATH $ADVINA_HOME/$ADVINA_VER/bin:$PATH
-RUN wget https://vina.scripps.edu/wp-content/uploads/sites/55/2020/12/autodock_vina_1_1_2_linux_x86.tgz
-RUN tar -zxvf autodock_vina_1_1_2_linux_x86.tgz \
-    && rm autodock_vina_1_1_2_linux_x86.tgz
-RUN mkdir -p $ADVINA_HOME
-RUN mv autodock_vina_1_1_2_linux_x86 $ADVINA_HOME/$ADVINA_VER
+RUN pip install vina
+# ENV ADVINA_HOME /advina
+# ENV ADVINA_VER  1.1.2
+# ENV PATH $ADVINA_HOME/$ADVINA_VER/bin:$PATH
+# RUN wget https://vina.scripps.edu/wp-content/uploads/sites/55/2020/12/autodock_vina_1_1_2_linux_x86.tgz
+# RUN tar -zxvf autodock_vina_1_1_2_linux_x86.tgz \
+#     && rm autodock_vina_1_1_2_linux_x86.tgz
+# RUN mkdir -p $ADVINA_HOME
+# RUN mv autodock_vina_1_1_2_linux_x86 $ADVINA_HOME/$ADVINA_VER
 
 #### AutoDock FR (for prepare_ligand, prepare_receptor) ####
 ENV ADFR_HOME /adfr
@@ -28,5 +32,3 @@ RUN cd /ADFRsuite_x86_64Linux_1.0 \
     && ./install.sh -d $ADFR_HOME/$ADFR_VER \
     && rm -r /ADFRsuite_x86_64Linux_1.0
 
-#### Anaconda ####
-RUN conda install -y -c conda-forge openbabel=3.1.1
