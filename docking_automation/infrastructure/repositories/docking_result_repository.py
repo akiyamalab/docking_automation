@@ -1,6 +1,7 @@
 from docking_automation.docking.docking_result import DockingResult
 
 
+# リポジトリ
 class DockingResultRepository:
     """ドッキング計算結果を保持するリポジトリクラス。"""
     def save(self, result: DockingResult):

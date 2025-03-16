@@ -1,9 +1,8 @@
-from pathlib import Path
 from typing import Optional
 import numpy as np
 import numpy.typing as npt
 
-
+# 値オブジェクト
 class GridBox:
     """
     ドッキング計算の領域を表すオブジェクト

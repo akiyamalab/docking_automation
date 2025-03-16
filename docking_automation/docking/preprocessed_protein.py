@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-
+# 値オブジェクト
 class PreprocessedProtein:
     """
     前処理済みのタンパク質を表すオブジェクト

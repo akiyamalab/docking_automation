@@ -6,10 +6,11 @@ from ..molecule.protein import Protein
 from .docking_parameters import DockingParameters, SpecificDockingParametersABC
 from .docking import DockingToolABC
 
+# 値オブジェクト
 class REstrettoParameters(SpecificDockingParametersABC):
     ...
 
-    
+# インフラ    
 class REstretto(DockingToolABC):
     """
     REstretto を使ったドッキング計算を行うクラス。

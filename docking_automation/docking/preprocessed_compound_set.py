@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
-
+# 値オブジェクト
 class PreprocessedCompoundSet:
     """
     前処理済みの化合物群を表すオブジェクト

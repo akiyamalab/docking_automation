@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 
 from .docking_parameters import DockingParameters
 
+# インフラ
 class DockingToolABC(ABC):
     @abstractmethod
     def preprocess_protein(self, protein: Protein) -> PreprocessedProtein:
