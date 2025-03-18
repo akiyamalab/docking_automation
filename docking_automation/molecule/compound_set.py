@@ -1,5 +1,7 @@
+import gzip
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TextIO, Union, BinaryIO
+from rdkit import Chem
 
 
 class CompoundSet:
@@ -26,4 +28,46 @@ class CompoundSet:
         Returns:
             化合物の数
         """
-        raise NotImplementedError()
+        # ファイル形式を判断
+        file_format = self.path.suffix.lower()
+        
+        # gzipで圧縮されている場合
+        if file_format == '.gz':
+            # 実際のファイル形式を取得
+            actual_format = self.path.stem.split('.')[-1].lower()
+            
+            if actual_format == 'sdf':
+                return self._count_compounds_in_sdf()
+            else:
+                raise ValueError(f"サポートされていないファイル形式です: {actual_format}")
+        # 非圧縮ファイルの場合
+        elif file_format == '.sdf':
+            return self._count_compounds_in_sdf()
+        else:
+            raise ValueError(f"サポートされていないファイル形式です: {file_format}")
+    
+    def _count_compounds_in_sdf(self) -> int:
+        """
+        SDFファイル内の化合物数をカウントする。
+        RDKitを使用して化合物数をカウントする。
+
+        Returns:
+            化合物の数
+        """
+        try:
+            if str(self.path).endswith('.gz'):
+                with gzip.open(self.path, 'rt') as f:
+                    count = 0
+                    for line in f:
+                        if "$$$$" in line:
+                            count += 1
+                    return count
+            else:
+                with open(self.path, 'rt') as f:
+                    count = 0
+                    for line in f:
+                        if "$$$$" in line:
+                            count += 1
+                    return count
+        except Exception as e:
+            raise ValueError(f"化合物数のカウント中にエラーが発生しました: {e}")

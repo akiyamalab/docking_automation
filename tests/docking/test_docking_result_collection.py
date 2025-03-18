@@ -27,6 +27,7 @@ class TestDockingResultCollection:
                         protein_id=f"protein{protein_idx}",
                         compound_set_id=f"compound_set{compound_set_idx}",
                         compound_index=compound_idx,
+                        docking_score=score,
                         metadata={"score": score}
                     )
                     results.append(result)
@@ -64,7 +65,7 @@ class TestDockingResultCollection:
     def test_filter(self, sample_collection):
         """フィルタリングのテスト"""
         # スコアが-9.5より良い（より負の値が大きい）結果のみをフィルタリング
-        filtered = sample_collection.filter(lambda result: result.get_score() < -9.5)
+        filtered = sample_collection.filter(lambda result: result.docking_score < -9.5)
         raise NotImplementedError()
     
     def test_group_by_protein(self, sample_collection):

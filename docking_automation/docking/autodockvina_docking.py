@@ -1,3 +1,9 @@
+import tempfile
+from pathlib import Path
+from typing import Optional
+
+from vina import Vina # type: ignore[import-untyped]
+
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
 from .docking_result import DockingResult
@@ -5,6 +11,9 @@ from ..molecule.compound_set import CompoundSet
 from ..molecule.protein import Protein
 from .docking_parameters import DockingParameters, SpecificDockingParametersABC
 from .docking import DockingToolABC
+from ..converters.molecule_converter import MoleculeConverter
+import numpy as np
+import numpy.typing as npt
 
 # 値オブジェクト
 class AutoDockVinaParameters(SpecificDockingParametersABC):
@@ -13,21 +22,43 @@ class AutoDockVinaParameters(SpecificDockingParametersABC):
     """
     def __init__(
         self,
+        exhaustiveness: int = 8,
+        num_modes: int = 9,
+        seed: Optional[int] = None,
         **kwargs
     ):
         """
         AutoDockVinaParametersオブジェクトを初期化する。
         
         Args:
-            **kwargs: パラメータ
+            exhaustiveness: 探索の徹底度（デフォルト: 8）
+            num_modes: 出力するポーズの数（デフォルト: 9）
+            seed: 乱数シード（デフォルト: None）
+            **kwargs: その他のパラメータ
         """
-        self.params = kwargs
+        self.params = {
+            'exhaustiveness': exhaustiveness,
+            'num_modes': num_modes,
+        }
+        
+        if seed is not None:
+            self.params['seed'] = seed
+            
+        # その他のパラメータを追加
+        self.params.update(kwargs)
 
 # インフラ
 class AutoDockVina(DockingToolABC):
     """
     AutoDock Vina を使ったドッキング計算を行うクラス。
     """
+    def __init__(self):
+        """
+        AutoDockVinaオブジェクトを初期化する。
+        """
+        # TODO: converter が外から見える必要はないはず。
+        self.converter = MoleculeConverter()
+        
     def _preprocess_protein(self, protein: Protein) -> PreprocessedProtein:
         """
         タンパク質について、AutoDock Vina用の前処理を行う。
@@ -38,7 +69,15 @@ class AutoDockVina(DockingToolABC):
         Returns:
             前処理済みのタンパク質
         """
-        raise NotImplementedError()
+        # 一時ディレクトリを作成
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        # PDBQTファイルに変換
+        pdbqt_path = temp_dir / f"{protein.id}.pdbqt"
+        self.converter.protein_to_pdbqt(protein, pdbqt_path)
+        
+        # 前処理済みのタンパク質を返す
+        return PreprocessedProtein(file_path=pdbqt_path)
 
     def _preprocess_compound_set(self, compound_set: CompoundSet) -> PreprocessedCompoundSet:
         """
@@ -50,7 +89,15 @@ class AutoDockVina(DockingToolABC):
         Returns:
             前処理済みの化合物セット
         """
-        raise NotImplementedError()
+        # 一時ディレクトリを作成
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        # PDBQTファイルに変換
+        pdbqt_path = temp_dir / f"{compound_set.id}.pdbqt"
+        self.converter.compound_to_pdbqt(compound_set, pdbqt_path)
+        
+        # 前処理済みの化合物セットを返す
+        return PreprocessedCompoundSet(file_path=pdbqt_path)
 
     def dock(self, parameters: DockingParameters) -> DockingResult:
         """
@@ -62,5 +109,84 @@ class AutoDockVina(DockingToolABC):
         Returns:
             ドッキング結果
         """
-        raise NotImplementedError()
-
+        # パラメータを取得
+        common_params = parameters.common
+        specific_params = parameters.specific
+        
+        if not isinstance(specific_params, AutoDockVinaParameters):
+            raise ValueError("specific_paramsはAutoDockVinaParametersのインスタンスである必要があります。")
+        
+        # 前処理済みのタンパク質と化合物セット
+        protein = common_params.protein
+        compound_set = common_params.compound_set
+        grid_box = common_params.grid_box
+        
+        # ファイルパスを取得
+        if protein.file_path is None:
+            raise ValueError("タンパク質のファイルパスが指定されていません。")
+        if compound_set.file_path is None:
+            raise ValueError("化合物セットのファイルパスが指定されていません。")
+        
+        # 一時ディレクトリを作成
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        # 結果ファイルのパス
+        output_pdbqt = temp_dir / "output.pdbqt"
+        output_sdf = temp_dir / "output.sdf"
+        
+        # グリッドボックスの中心とサイズを取得
+        center = grid_box.center
+        size = grid_box.size
+        
+        try:
+            # Vinaオブジェクトを作成
+            v = Vina()
+            
+            # 受容体を設定
+            v.set_receptor(str(protein.file_path))
+            
+            # リガンドを設定
+            v.set_ligand_from_file(str(compound_set.file_path))
+            
+            # スコア関数を設定（グリッドボックスの中心と大きさを指定）
+            v.compute_vina_maps(
+                center=[center[0], center[1], center[2]],
+                box_size=[size[0], size[1], size[2]]
+            )
+            
+            # ドッキング計算を実行
+            # パラメータを設定
+            v.dock(
+                exhaustiveness=specific_params.params.get('exhaustiveness', 8),
+                n_poses=specific_params.params.get('num_modes', 9),
+                min_rmsd=1.0
+            )
+            
+            # 結果を保存
+            v.write_poses(str(output_pdbqt), n_poses=specific_params.params.get('num_modes', 9), overwrite=True)
+            
+            # 結果をSDFに変換
+            self.converter.pdbqt_to_sdf(output_pdbqt, output_sdf)
+            
+            # スコアを取得
+            scores:npt.NDArray[np.float64] = v.energies()
+            
+            # メタデータを作成
+            metadata = {
+                "tool": "AutoDock Vina",
+                "parameters": specific_params.params,
+                "scores": scores,
+                "pose_path": str(output_sdf)
+            }
+            
+            # DockingResultオブジェクトを作成
+            return DockingResult(
+                result_path=output_pdbqt,
+                protein_id=protein.file_path.stem,
+                compound_set_id=compound_set.file_path.stem,
+                compound_index=0,
+                docking_score=scores[0,0],
+                metadata=metadata
+            )
+        except Exception as e:
+            raise RuntimeError(f"AutoDock Vinaの実行中にエラーが発生しました: {str(e)}")
