@@ -241,23 +241,22 @@ class MoleculeConverter:
             # 一時ディレクトリを削除
             shutil.rmtree(temp_dir)
     
-    # TODO: meeko を利用することを必須とし、openbabelのルートは削除する
-    # TODO: コードの重複を避けるため、meeko を使う場合は、 self.compound_to_rdkit() を行い、その後に meeko を使って pdbqt に変換する。
-    # TODO: 複数の化合物を含むSDFファイルに対応する
-    def compound_to_pdbqt(self, compound: CompoundSet, output_path: Path) -> Path:
+    def compound_to_pdbqt(self, compound: CompoundSet, output_dir: Path) -> List[Path]:
         """
         CompoundSetオブジェクトからpdbqtファイルに変換する。
         meekoを使用して変換を行う。
         
+        複数の化合物を含むSDFファイルに対応し、各化合物に対して個別のPDBQTファイルを生成する。
+        
         Args:
             compound: 変換対象のCompoundSetオブジェクト
-            output_path: 出力先のパス
+            output_dir: 出力先のディレクトリ
             
         Returns:
-            生成されたpdbqtファイルのパス
+            生成されたpdbqtファイルのパスのリスト
         """
         # 出力ディレクトリが存在しない場合は作成
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         # 一時的なSDFファイルを作成
         with tempfile.NamedTemporaryFile(delete=False, suffix='.sdf') as temp_file:
@@ -283,27 +282,59 @@ class MoleculeConverter:
                 if input_path.suffix.lower() == '.sdf':
                     # SDFファイルを読み込む
                     suppl = Chem.SDMolSupplier(str(input_path))
-                    mol = next(mol for mol in suppl if mol is not None)
+                    
+                    # 各化合物に対してPDBQTファイルを生成
+                    pdbqt_paths = []
+                    valid_count = 0
+                    total_count = 0
+                    
+                    print(f"化合物の前処理を開始します...")
+                    
+                    for idx, mol in enumerate(suppl):
+                        total_count += 1
+                        if mol is None:
+                            print(f"警告: インデックス {idx} の化合物は無効です。スキップします。")
+                            continue
+                        
+                        try:
+                            # 出力ファイルのパス
+                            output_path = output_dir / f"{compound.id}_{idx}.pdbqt"
+                            
+                            # 明示的な水素原子を追加
+                            mol_with_h = Chem.AddHs(mol)
+                            
+                            # meekoを使用してPDBQTに変換
+                            preparator = MoleculePreparation()
+                            preparator.prepare(mol_with_h)
+                            pdbqt_string = preparator.write_pdbqt_string()
+                            
+                            # PDBQTファイルに保存
+                            with open(output_path, 'w') as f:
+                                f.write(pdbqt_string)
+                            
+                            # ファイルが空の場合はエラー
+                            if output_path.stat().st_size == 0:
+                                print(f"警告: インデックス {idx} の化合物のPDBQTファイルが空です。スキップします。")
+                                continue
+                            
+                            pdbqt_paths.append(output_path)
+                            valid_count += 1
+                            
+                            if valid_count % 10 == 0:
+                                print(f"進捗: {valid_count}/{total_count} 化合物を処理しました")
+                        
+                        except Exception as e:
+                            print(f"警告: インデックス {idx} の化合物の処理中にエラーが発生しました: {e}")
+                            continue
+                    
+                    print(f"化合物の前処理が完了しました（成功: {valid_count}/{total_count}）")
+                    
+                    if not pdbqt_paths:
+                        raise ValueError("有効なPDBQTファイルが生成されませんでした。")
+                    
+                    return pdbqt_paths
                 else:
                     raise ValueError(f"サポートされていないファイル形式です: {input_path.suffix.lower()}")
-                
-                # 明示的な水素原子を追加
-                mol = Chem.AddHs(mol)
-                
-                # meekoを使用してPDBQTに変換
-                preparator = MoleculePreparation()
-                preparator.prepare(mol)
-                pdbqt_string = preparator.write_pdbqt_string()
-                
-                # PDBQTファイルに保存
-                with open(output_path, 'w') as f:
-                    f.write(pdbqt_string)
-                
-                # ファイルが空の場合はエラー
-                if output_path.stat().st_size == 0:
-                    raise ValueError("PDBQTファイルの生成に失敗しました。")
-                
-                return output_path
             except Exception as e:
                 raise ValueError(f"PDBQTファイルの生成中にエラーが発生しました: {e}")
             finally:

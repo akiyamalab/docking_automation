@@ -1,3 +1,5 @@
+from typing import List
+
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
 from .docking_result import DockingResult
@@ -49,15 +51,16 @@ class REstretto(DockingToolABC):
         """
         raise NotImplementedError()
 
-    def dock(self, parameters: DockingParameters) -> DockingResult:
+    def dock(self, parameters: DockingParameters) -> List[DockingResult]:
         """
         REstrettoを使ってドッキング計算を実施する。
+        
+        複数の化合物に対してドッキング計算を行い、結果のリストを返す。
         
         Args:
             parameters: ドッキングパラメータ
             
         Returns:
-            ドッキング結果
+            ドッキング結果のリスト
         """
         raise NotImplementedError()
-

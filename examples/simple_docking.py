@@ -19,11 +19,12 @@ def parse_args():
         argparse.Namespace: 解析されたコマンドライン引数
     """
     parser = argparse.ArgumentParser(description='ALDRタンパク質に対するドッキング計算を実行する')
-    parser.add_argument('--decoys', action='store_true', help='デコイ化合物を使用する（デフォルトは活性化合物）')
+    parser.add_argument('--decoys', action='store_true', help='デコイ化合物を使用する（デフォルト: 活性化合物）')
     parser.add_argument('--exhaustiveness', type=int, default=4, help='探索の徹底度（デフォルト: 4）')
     parser.add_argument('--num-modes', type=int, default=3, help='出力するポーズの数（デフォルト: 3）')
     parser.add_argument('--energy-range', type=float, default=3.0, help='出力するポーズのエネルギー範囲（デフォルト: 3.0）')
     parser.add_argument('--top', type=int, default=10, help='表示する上位ヒット数（デフォルト: 10）')
+    parser.add_argument('--max-compounds', type=int, default=None, help='処理する化合物の最大数（デフォルト: すべて）')
     return parser.parse_args()
 
 def main():
@@ -83,7 +84,19 @@ def main():
         compound_set = CompoundSet(compound_path)
         
         # 化合物数を表示
-        print(f"化合物数: {compound_set.get_compound_count()}")
+        total_compounds = compound_set.get_compound_count()
+        print(f"化合物数: {total_compounds}")
+        
+        # 処理する化合物の最大数を設定
+        max_compounds = args.max_compounds
+        if max_compounds is not None and max_compounds > 0:
+            if max_compounds < total_compounds:
+                print(f"最初の{max_compounds}件の化合物のみを処理します")
+                # 最初のmax_compounds件の化合物のみを含む新しいCompoundSetを作成
+                # 現時点では実装されていないため、AutoDockVinaクラスのdockメソッドで制限する
+            else:
+                print(f"指定された最大数（{max_compounds}）が全化合物数（{total_compounds}）以上のため、すべての化合物を処理します")
+                max_compounds = None
         
         # 2. グリッドボックスの定義
         # 結晶構造のリガンド位置を中心とする
@@ -98,10 +111,13 @@ def main():
         additional_params = AutoDockVinaParameters(
             exhaustiveness=args.exhaustiveness,  # 探索の徹底度
             num_modes=args.num_modes,           # 出力するポーズの数
-            energy_range=args.energy_range      # 出力するポーズのエネルギー範囲
+            energy_range=args.energy_range,     # 出力するポーズのエネルギー範囲
+            max_compounds=max_compounds         # 処理する化合物の最大数
         )
         
         print(f"ドッキングパラメータ: exhaustiveness={args.exhaustiveness}, num_modes={args.num_modes}, energy_range={args.energy_range}")
+        if max_compounds is not None:
+            print(f"処理する化合物の最大数: {max_compounds}")
         print("ドッキング計算を開始します...")
         results = docking_tool.run_docking(protein, compound_set, grid_box, additional_params)
         

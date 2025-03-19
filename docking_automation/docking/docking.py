@@ -1,3 +1,5 @@
+from typing import List
+
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
 from .docking_result import DockingResult
@@ -38,15 +40,17 @@ class DockingToolABC(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def dock(self, parameters: DockingParameters) -> DockingResult:
+    def dock(self, parameters: DockingParameters) -> List[DockingResult]:
         """
         ドッキング計算を実施する。
+        
+        複数の化合物に対してドッキング計算を行い、結果のリストを返す。
         
         Args:
             parameters: ドッキングパラメータ
             
         Returns:
-            ドッキング結果
+            ドッキング結果のリスト
         """
         raise NotImplementedError()
     
@@ -56,10 +60,12 @@ class DockingToolABC(ABC):
         compound_set: CompoundSet,
         grid_box: GridBox,
         additional_params: SpecificDockingParametersABC
-    ) -> DockingResult:
+    ) -> List[DockingResult]:
         """
         前処理を自動的に行ってからドッキング計算を実施する。
         内部メソッドであり、直接呼び出すべきではない。
+        
+        複数の化合物に対してドッキング計算を行い、結果のリストを返す。
         
         Args:
             protein: ドッキング対象のタンパク質
@@ -68,7 +74,7 @@ class DockingToolABC(ABC):
             additional_params: 追加のパラメータ
             
         Returns:
-            ドッキング結果
+            ドッキング結果のリスト
         """
         # 前処理
         preprocessed_protein = self._preprocess_protein(protein)
@@ -99,6 +105,8 @@ class DockingToolABC(ABC):
         """
         ドッキング計算を実行し、結果をコレクションとして返す。
         
+        複数の化合物に対してドッキング計算を行い、結果をコレクションに追加する。
+        
         Args:
             protein: ドッキング対象のタンパク質
             compound_set: ドッキング対象の化合物セット
@@ -108,7 +116,7 @@ class DockingToolABC(ABC):
         Returns:
             ドッキング結果のコレクション
         """
-        result = self._dock_with_auto_preprocess(
+        results = self._dock_with_auto_preprocess(
             protein=protein,
             compound_set=compound_set,
             grid_box=grid_box,
@@ -117,6 +125,6 @@ class DockingToolABC(ABC):
         
         # 結果をコレクションに変換
         collection = DockingResultCollection()
-        collection.add(result)
+        collection.extend(results)  # extendを使用して複数の結果を一度に追加
         
         return collection
