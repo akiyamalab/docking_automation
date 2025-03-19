@@ -15,6 +15,10 @@ setup(
         "matplotlib>=3.5.0",   # グラフ描画
         "scipy>=1.8.0",        # 科学計算
         "sortedcontainers>=2.4.0",  # ソート済みコンテナ
+        # 以下のパッケージは以前はオプショナルでしたが、常にインストールされるようになりました
+        "rdkit>=2022.3.1",        # 化学情報学ライブラリ（conda経由でインストール推奨）
+        "openbabel-wheel>=3.1.0",  # 分子ファイル形式変換
+        "meeko>=0.4.0",         # リガンド準備（AutoDock Vina用）
     ],
     extras_require={
         "dev": [
@@ -25,18 +29,6 @@ setup(
             "black>=22.3.0",
             "sphinx>=5.0.0",
             "types-setuptools",  # setuptoolsの型定義
-        ],
-        "chem": [
-            "rdkit>=2022.3.1",        # 化学情報学ライブラリ（conda経由でインストール推奨）
-            "openbabel-wheel>=3.1.0",  # 分子ファイル形式変換
-        ],
-        "docking": [
-            "meeko>=0.4.0",         # リガンド準備（AutoDock Vina用）
-        ],
-        "full": [
-            "rdkit>=2022.3.1",
-            "openbabel-wheel>=3.1.0",
-            "meeko>=0.4.0",
         ],
     },
     python_requires=">=3.8",

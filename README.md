@@ -13,36 +13,24 @@ Docking Automation Frameworkは、タンパク質-化合物ドッキング計算
 - **効率的な処理**: 並列処理による大規模計算の高速化
 - **複数ツール対応**: 様々なドッキングツールを統一インターフェースで利用可能
 
-## システム要件
-
-- **Python**: 3.8以上
-- **対応OS**: Linux, macOS, Windows
-- **必要なディスク容量**: 500MB以上（ドッキング結果保存用の追加容量が必要）
-- **推奨メモリ**: 8GB以上（大規模計算には16GB以上推奨）
-
 ## インストール方法
 
 ### 基本インストール
 
 ```bash
-# 基本パッケージのインストール
+# パッケージのインストール（すべての依存関係が自動的にインストールされます）
 pip install -e .
 ```
 
-### 追加機能のインストール
+### 開発用ツールのインストール
 
 ```bash
-# 化学情報学ライブラリを含めたインストール
-pip install -e .[chem]
-
-# ドッキング関連ライブラリを含めたインストール
-pip install -e .[docking]
-
-# すべての機能を含めたインストール
-pip install -e .[full]
+# 開発用ツール（テスト、リンター、ドキュメント生成など）を含めたインストール
+pip install -e .[dev]
 ```
 
 ### RDKitのインストール
+=======
 
 RDKitはconda経由でのインストールが推奨されています：
 
@@ -163,30 +151,6 @@ loaded_results = DockingResultCollection.load_from_csv("docking_results.csv")
 
 ## トラブルシューティング
 
-### インストール時の問題
-
-#### RDKitのインストールエラー
-
-RDKitのインストールに問題がある場合は、Condaを使用したインストールをお試しください：
-
-```bash
-conda install -c conda-forge rdkit
-pip install -e .
-```
-
-#### OpenBabelのインストールエラー
-
-OpenBabelのインストールに問題がある場合：
-
-```bash
-# Linuxの場合
-sudo apt-get install openbabel
-# または
-conda install -c conda-forge openbabel
-
-# macOSの場合
-brew install open-babel
-```
 
 ### 実行時のエラー
 
@@ -197,27 +161,3 @@ brew install open-babel
 ```python
 results = docking_tool.run_docking(protein, compounds, grid_box, batch_size=50)
 ```
-
-#### タンパク質準備のエラー
-
-タンパク質の前処理中にエラーが発生する場合は、以下を確認してください：
-
-- PDBファイルの形式が正しいか
-- 欠損残基や原子がないか
-- 水素原子の追加が必要か
-
-```python
-# 水素原子を明示的に追加
-protein = Protein(protein_path, add_hydrogens=True)
-```
-
-## サポートとリソース
-
-- **ドキュメント**: [完全なドキュメント](https://docking-automation.readthedocs.io/)
-- **バグ報告**: [Issue Tracker](https://github.com/yourusername/docking_automation/issues)
-- **ディスカッション**: [GitHub Discussions](https://github.com/yourusername/docking_automation/discussions)
-- **連絡先**: example@email.com
-
-## ライセンス
-
-このプロジェクトはMITライセンスの下で公開されています。詳細は[LICENSE](LICENSE)ファイルをご覧ください。
