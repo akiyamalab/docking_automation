@@ -1,11 +1,32 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 import numpy as np
 import numpy.typing as npt
+from dataclasses import dataclass
+
+# TODO: [DDD] 値オブジェクトとしての実装を強化する
+# - dataclass(frozen=True)への変換を検討する
+# - 不変条件のバリデーションを強化する（サイズが正の値であることなど）
+# - __eq__と__hash__メソッドを実装して等価性比較を可能にする
+# - 値オブジェクト同士の演算メソッド（例：2つのGridBoxの結合や交差判定）を追加する
 
 # 値オブジェクト
 class GridBox:
     """
     ドッキング計算の領域を表すオブジェクト
+    
+    TODO: [DDD] このクラスをdataclass(frozen=True)に変換し、不変性を確保する
+    例:
+    @dataclass(frozen=True)
+    class GridBox:
+        center: np.ndarray
+        size: np.ndarray
+        
+        def __post_init__(self):
+            # 不変条件の検証
+            if len(self.center) != 3 or len(self.size) != 3:
+                raise ValueError("center と size は3次元配列である必要があります")
+            if any(s <= 0 for s in self.size):
+                raise ValueError("size はすべて正の値である必要があります")
     """
     __center: npt.NDArray[np.float64]
     __size: npt.NDArray[np.float64]
