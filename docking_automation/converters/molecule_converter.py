@@ -327,6 +327,8 @@ class MoleculeConverter:
             ValueError: 変換に失敗した場合
         """
         # 出力ディレクトリが存在しない場合は作成
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
         mols: List[Any] = self.pdbqt_to_rdkit(pdbqt_path)
                 
         # SDFファイルとして保存
