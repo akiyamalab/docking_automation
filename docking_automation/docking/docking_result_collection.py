@@ -1,60 +1,56 @@
-from typing import List, Dict, Tuple, Callable, Iterator, Optional, Set, Any
+from typing import List, Dict, Callable, Iterator, Optional, TypeVar, Union
 from sortedcontainers import SortedList # type: ignore
 from .docking_result import DockingResult
+import itertools
+from pathlib import Path
 
 
-# TODO: [DDD] 集約ルートとしての実装を強化する
-# - 集約の境界を明確にし、DockingResultへのアクセスを制御する
-# - 集約の一貫性を保証するためのメソッドを追加する
-# - 集約内の不変条件を定義し、常に満たされるようにする
-# - ファクトリメソッドを導入し、集約の生成を制御する
-# - リポジトリパターンとの連携を強化し、集約単位での永続化を実現する
+T = TypeVar('T')
+
 
 class DockingResultCollection:
     """
     複数のDockingResultを管理するコレクションクラス。
     
     常にドッキングスコアでソートされた状態を維持する。
-    
-    TODO: [DDD] 集約ルートとしての振る舞いを強化する
-    - 集約の境界を明確に定義する
-    - 集約内のエンティティへのアクセスを制御する
-    - 集約の一貫性を保証する不変条件を定義する
-    - 集約のライフサイクルを管理する
+    このクラスは単純なコレクションとして機能し、DockingResultの集合を管理するためのユーティリティメソッドを提供する。
+    大規模なデータセットを扱う場合は、ストリーミング処理やバッチ処理を検討すること。
     """
-    
-    def __init__(self, collection_id: Optional[str] = None):
+    # TODO: factoryを使って results list[DockingResult] = [] とする
+    def __init__(self, results: Optional[List[DockingResult]] = None) -> None:
         """
         DockingResultCollectionオブジェクトを初期化する。
         
-        TODO: [DDD] 集約ルートの初期化を強化する
-        - 一意の識別子（ID）を生成・管理する仕組みを導入する
-        - 集約の不変条件を初期化時に設定する
-        - ドメインイベントの発行機能を初期化する
-        
         Args:
-            collection_id: コレクションのID（指定しない場合は自動生成）
+            results: 初期結果のリスト（指定しない場合は空のコレクションを作成）
         """
         self._results = SortedList(key=lambda result: result.docking_score)
-        import uuid
-        self.id = collection_id or f"collection_{uuid.uuid4()}"  # TODO: [DDD] より堅牢なID生成方法を実装する
-        self._domain_events: Set[Any] = set()  # TODO: [DDD] ドメインイベントの型を定義する
+        if results:
+            for result in results:
+                self._results.add(result)
     
     def add(self, result: DockingResult) -> None:
         """
         結果を追加する。
         
-        TODO: [DDD] 集約の一貫性を保証する
-        - 追加前に不変条件を検証する
-        - 重複チェックを行う
-        - ドメインイベントを発行する
-        
         Args:
             result: 追加する結果
         """
-        # TODO: [DDD] 重複チェックを実装する
         self._results.add(result)
-        # TODO: [DDD] ドメインイベントを発行する
+    
+    def extend(self, results: Union[List[DockingResult], 'DockingResultCollection']) -> None:
+        """
+        複数の結果を一度に追加する。
+        
+        Args:
+            results: 追加する結果のリストまたはDockingResultCollection
+        """
+        if isinstance(results, DockingResultCollection):
+            for result in results:
+                self._results.add(result)
+        else:
+            for result in results:
+                self._results.add(result)
     
     def get_all(self) -> List[DockingResult]:
         """
@@ -87,46 +83,27 @@ class DockingResultCollection:
         """
         条件に合致する結果のみを含む新しいコレクションを作成する。
         
+        例えば、特定のタンパク質IDに関連する結果のみを抽出する場合：
+        ```python
+        protein_results = collection.filter(lambda r: r.protein_id == "protein1")
+        ```
+        
+        特定の化合物に関連する結果のみを抽出する場合：
+        ```python
+        compound_results = collection.filter(
+            lambda r: r.compound_set_id == "set1" and r.compound_index == 0
+        )
+        ```
+        
         Args:
             condition: フィルタリング条件
             
         Returns:
             フィルタリングされた結果のコレクション
         """
-        filtered_collection = DockingResultCollection()
-        for result in self._results:
-            if condition(result):
-                filtered_collection.add(result)
+        filtered_results = [result for result in self._results if condition(result)]
+        filtered_collection = DockingResultCollection(filtered_results)
         return filtered_collection
-    
-    def group_by_protein(self) -> Dict[str, 'DockingResultCollection']:
-        """
-        タンパク質IDごとに結果をグループ化する。
-        
-        Returns:
-            タンパク質IDをキー、結果のコレクションを値とする辞書
-        """
-        grouped: Dict[str, DockingResultCollection] = {}
-        for result in self._results:
-            if result.protein_id not in grouped:
-                grouped[result.protein_id] = DockingResultCollection()
-            grouped[result.protein_id].add(result)
-        return grouped
-    
-    def group_by_compound(self) -> Dict[Tuple[str, int], 'DockingResultCollection']:
-        """
-        化合物（化合物セットIDと化合物インデックスの組）ごとに結果をグループ化する。
-        
-        Returns:
-            (化合物セットID, 化合物インデックス)をキー、結果のコレクションを値とする辞書
-        """
-        grouped: Dict[Tuple[str, int], DockingResultCollection] = {}
-        for result in self._results:
-            key = (result.compound_set_id, result.compound_index)
-            if key not in grouped:
-                grouped[key] = DockingResultCollection()
-            grouped[key].add(result)
-        return grouped
     
     def __len__(self) -> int:
         """
@@ -146,86 +123,82 @@ class DockingResultCollection:
         """
         return iter(self._results)
     
-    # TODO: [DDD] ドメインイベントの発行機能を追加する
-    def register_domain_event(self, event: Any) -> None:
+    def merge(self, other: 'DockingResultCollection') -> 'DockingResultCollection':
         """
-        ドメインイベントを登録する。
+        別のコレクションとマージして新しいコレクションを作成する。
         
         Args:
-            event: 登録するドメインイベント
-        """
-        raise NotImplementedError("ドメインイベントの登録機能を実装する必要があります")
-    
-    # TODO: [DDD] ドメインイベントの取得機能を追加する
-    def get_domain_events(self) -> Set[Any]:
-        """
-        登録されたドメインイベントを取得する。
-        
-        Returns:
-            ドメインイベントのセット
-        """
-        raise NotImplementedError("ドメインイベントの取得機能を実装する必要があります")
-    
-    # TODO: [DDD] ドメインイベントのクリア機能を追加する
-    def clear_domain_events(self) -> None:
-        """
-        登録されたドメインイベントをクリアする。
-        """
-        raise NotImplementedError("ドメインイベントのクリア機能を実装する必要があります")
-    
-    # TODO: [DDD] 集約の検証機能を追加する
-    def validate(self) -> bool:
-        """
-        集約の不変条件を検証する。
-        
-        Returns:
-            不変条件を満たしていればTrue、そうでなければFalse
-        """
-        raise NotImplementedError("集約の検証機能を実装する必要があります")
-    
-    # TODO: [DDD] 結果の削除機能を追加する
-    def remove(self, result: DockingResult) -> None:
-        """
-        結果を削除する。
-        
-        Args:
-            result: 削除する結果
-        """
-        raise NotImplementedError("結果の削除機能を実装する必要があります")
-    
-    # TODO: [DDD] 結果の検索機能を追加する
-    def find_by_id(self, result_id: str) -> Optional[DockingResult]:
-        """
-        IDによって結果を検索する。
-        
-        Args:
-            result_id: 検索する結果のID
+            other: マージする別のコレクション
             
         Returns:
-            見つかった結果、見つからなければNone
+            マージされた新しいコレクション
         """
-        raise NotImplementedError("結果の検索機能を実装する必要があります")
+        merged = DockingResultCollection()
+        for result in itertools.chain(self._results, other._results):
+            merged.add(result)
+        return merged
     
-    # TODO: [DDD] ファクトリメソッドを追加する
+    
+    def export_to_sdf(self, output_path: Path) -> None:
+        """
+        結果をSDFファイルにエクスポートする。
+        
+        Args:
+            output_path: 出力ファイルのパス
+        """
+        # 実際のSDFエクスポート処理はRDKitなどの外部ライブラリに依存するため、
+        # ここではインターフェースのみを定義
+        raise NotImplementedError("SDFエクスポート機能を実装する必要があります")
+    
     @classmethod
-    def create(cls, collection_id: Optional[str] = None) -> 'DockingResultCollection':
+    def from_results(cls, results: List[DockingResult]) -> 'DockingResultCollection':
         """
-        DockingResultCollectionオブジェクトを作成するファクトリメソッド。
+        結果のリストからDockingResultCollectionを作成する。
         
         Args:
-            collection_id: コレクションのID（指定しない場合は自動生成）
+            results: DockingResultのリスト
             
         Returns:
-            作成されたDockingResultCollectionオブジェクト
+            作成されたDockingResultCollection
         """
-        raise NotImplementedError("ファクトリメソッドを実装する必要があります")
+        return cls(results)
     
-    # TODO: [DDD] 集約の複製機能を追加する
-    def clone(self) -> 'DockingResultCollection':
+    @classmethod
+    def from_file(cls, file_path: Path) -> 'DockingResultCollection':
         """
-        集約の複製を作成する。
+        ファイルからDockingResultCollectionを作成する。
+        
+        Args:
+            file_path: 入力ファイルのパス
+            
+        Returns:
+            作成されたDockingResultCollection
+        """
+        # 実際のファイル読み込み処理はRDKitなどの外部ライブラリに依存するため、
+        # ここではインターフェースのみを定義
+        raise NotImplementedError("ファイル読み込み機能を実装する必要があります")
+    
+    def get_statistics(self) -> Dict[str, float]:
+        """
+        コレクション内の結果の統計情報を計算する。
         
         Returns:
-            複製された集約
+            統計情報を含む辞書（最小値、最大値、平均値、中央値など）
         """
-        raise NotImplementedError("集約の複製機能を実装する必要があります")
+        if not self._results:
+            return {
+                "min_score": 0.0,
+                "max_score": 0.0,
+                "avg_score": 0.0,
+                "median_score": 0.0,
+                "count": 0
+            }
+        
+        scores = [result.docking_score for result in self._results]
+        return {
+            "min_score": min(scores),
+            "max_score": max(scores),
+            "avg_score": sum(scores) / len(scores),
+            "median_score": scores[len(scores) // 2],  # 厳密には正確な中央値ではない
+            "count": len(scores)
+        }

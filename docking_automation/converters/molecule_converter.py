@@ -88,7 +88,7 @@ class MoleculeConverter:
         # Proteinオブジェクトを作成
         return Protein(output_path, id)
     
-    def compound_to_rdkit(self, compound: CompoundSet) -> List[Any]:
+    def compound_to_rdkit(self, compound: CompoundSet) -> List[Chem.Mol]:
         """
         CompoundSetオブジェクトからRDKitの分子オブジェクトのリストに変換する。
         
@@ -118,7 +118,7 @@ class MoleculeConverter:
                     # SDFファイルを読み込む
                     suppl = Chem.SDMolSupplier(str(temp_path))
                     # TODO: 何件の化合物がファイルに含まれており、何件を正常に読み込めたかをログに残すべきである。
-                    mols = [mol for mol in suppl if mol is not None]
+                    mols: list[Chem.Mol] = [mol for mol in suppl if mol is not None]
                 else:
                     raise ValueError(f"サポートされていないファイル形式です: {file_format}")
                 
@@ -135,7 +135,7 @@ class MoleculeConverter:
         return mols
     
     # TODO: id は optional であるべき。
-    def rdkit_to_compound(self, mols: List[Any], id: str, output_path: Path) -> CompoundSet:
+    def rdkit_to_compound(self, mols: List[Chem.Mol], id: str, output_path: Path) -> CompoundSet:
         """
         RDKitの分子オブジェクトのリストからCompoundSetオブジェクトに変換する。
         
@@ -228,14 +228,13 @@ class MoleculeConverter:
             
             return output_path
         except subprocess.CalledProcessError as e:
+            # TODO: ログ出力は標準ライブラリを利用したい
             error_message = f"prepare_receptorの実行中にエラーが発生しました: {e}\n"
             error_message += f"標準エラー出力: {e.stderr}\n"
             error_message += f"標準出力: {e.stdout}\n"
             error_message += f"コマンド: {' '.join(cmd)}\n"
             error_message += f"終了コード: {e.returncode}"
             raise ValueError(error_message)
-        except FileNotFoundError as e:
-            raise ValueError(f"prepare_receptorコマンドが見つかりません: {e}")
         except Exception as e:
             raise ValueError(f"タンパク質の前処理中にエラーが発生しました: {e}")
         finally:
@@ -244,6 +243,7 @@ class MoleculeConverter:
     
     # TODO: meeko を利用することを必須とし、openbabelのルートは削除する
     # TODO: コードの重複を避けるため、meeko を使う場合は、 self.compound_to_rdkit() を行い、その後に meeko を使って pdbqt に変換する。
+    # TODO: 複数の化合物を含むSDFファイルに対応する
     def compound_to_pdbqt(self, compound: CompoundSet, output_path: Path) -> Path:
         """
         CompoundSetオブジェクトからpdbqtファイルに変換する。
@@ -314,7 +314,7 @@ class MoleculeConverter:
     def pdbqt_to_sdf(self, pdbqt_path: Path, output_path: Path) -> Path:
         """
         pdbqtファイルからsdfファイルに変換する。
-        RDKitを使用して変換を行う。
+        meekoとRDKitを使用して変換を行う。
         
         Args:
             pdbqt_path: 変換対象のpdbqtファイルのパス
@@ -325,6 +325,10 @@ class MoleculeConverter:
         
         Raises:
             ValueError: 変換に失敗した場合
+            
+        Note: 
+            pdbqtファイルは、meekoによって作成されたものを想定しており、
+            それ以外のファイルを変換する場合にはエラーが発生する。
         """
         # 出力ディレクトリが存在しない場合は作成
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -338,7 +342,7 @@ class MoleculeConverter:
         
         return output_path
     
-    def pdbqt_to_rdkit(self, pdbqt_path: Path) -> List[Any]:
+    def pdbqt_to_rdkit(self, pdbqt_path: Path) -> List[Chem.Mol]:
         """
         pdbqtファイルからRDKitの分子オブジェクトのリストに変換する。
         
@@ -347,6 +351,10 @@ class MoleculeConverter:
             
         Returns:
             RDKitの分子オブジェクトのリスト
+        
+        Note: 
+            1つのpdbqtファイルには、同じ分子構造の異なるconformerが含まれることがある。
+            そのため、出力は list[Chem.Mol] となる。
         """
         
         with open(pdbqt_path, 'r') as f:

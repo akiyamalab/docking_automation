@@ -54,6 +54,16 @@ class TestDockingResultCollection:
             collection.add(result)
         raise NotImplementedError()
     
+    def test_extend(self, sample_results):
+        """複数の結果を一度に追加するテスト"""
+        collection = DockingResultCollection()
+        half_size = len(sample_results) // 2
+        collection.extend(sample_results[:half_size])
+        
+        other_collection = DockingResultCollection(sample_results[half_size:])
+        collection.extend(other_collection)
+        raise NotImplementedError()
+    
     def test_get_all(self, sample_collection, sample_results):
         """すべての結果の取得のテスト"""
         raise NotImplementedError()
@@ -66,16 +76,23 @@ class TestDockingResultCollection:
         """フィルタリングのテスト"""
         # スコアが-9.5より良い（より負の値が大きい）結果のみをフィルタリング
         filtered = sample_collection.filter(lambda result: result.docking_score < -9.5)
+        
+        # 特定のタンパク質IDに関連する結果のみをフィルタリング
+        protein_filtered = sample_collection.filter(lambda result: result.protein_id == "protein0")
+        
+        # 特定の化合物に関連する結果のみをフィルタリング
+        compound_filtered = sample_collection.filter(
+            lambda result: result.compound_set_id == "compound_set0" and result.compound_index == 0
+        )
         raise NotImplementedError()
     
-    def test_group_by_protein(self, sample_collection):
-        """タンパク質ごとのグループ化のテスト"""
-        grouped = sample_collection.group_by_protein()
-        raise NotImplementedError()
-    
-    def test_group_by_compound(self, sample_collection):
-        """化合物ごとのグループ化のテスト"""
-        grouped = sample_collection.group_by_compound()
+    def test_merge(self, sample_results):
+        """マージのテスト"""
+        half_size = len(sample_results) // 2
+        collection1 = DockingResultCollection(sample_results[:half_size])
+        collection2 = DockingResultCollection(sample_results[half_size:])
+        
+        merged = collection1.merge(collection2)
         raise NotImplementedError()
     
     def test_sorted_order(self, sample_results):

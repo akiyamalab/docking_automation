@@ -180,6 +180,8 @@ class AutoDockVina(DockingToolABC):
             }
             
             # DockingResultオブジェクトを作成
+            # TODO: output_pdbqtには複数のポーズが含まれるが、DockingResultは単一のポーズを用いる。したがって、複数のDockingResultを作成する必要がある。
+            # TODO: DockingResultは様々なドッキングツールで共通であるため、result_pathはpdbqtファイルである保証はないし、より抽象的にして、具体的な内容はrepository側に持ち込んだ方が良いと思われる
             return DockingResult(
                 result_path=output_pdbqt,
                 protein_id=protein.file_path.stem,

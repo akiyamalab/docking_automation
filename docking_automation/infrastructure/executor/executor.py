@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Dict, Optional, Union
+from typing import Any, List, Dict
 
-from .task import Task, TaskStatus
+from .task import Task
 
 # TODO: [DDD] エグゼキュータの実装を強化する
 # - ポートとアダプターパターンを適用し、ドメインロジックとインフラストラクチャを分離する

@@ -37,6 +37,7 @@ class SpecificDockingParametersABC(ABC):
 class DockingParameters:
     """
     ドッキングツールに関するパラメータを保持するクラス。
+    汎用的な部分と、ツール固有の部分を分けて保持する。
     """
     def __init__(
         self, 

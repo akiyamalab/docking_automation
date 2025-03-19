@@ -1,5 +1,3 @@
-from typing import Optional, Dict, Any, List, Union
-
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
 from .docking_result import DockingResult

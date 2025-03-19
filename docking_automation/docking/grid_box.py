@@ -1,7 +1,8 @@
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
-from dataclasses import dataclass
+
+from docking_automation.molecule.compound_set import CompoundSet
 
 # TODO: [DDD] 値オブジェクトとしての実装を強化する
 # - dataclass(frozen=True)への変換を検討する
@@ -106,3 +107,17 @@ class GridBox:
             サイズ
         """
         return self.__size.copy()
+
+    @classmethod
+    def from_crystal_ligand(cls, crystal_ligand: CompoundSet) -> 'GridBox':
+        """
+        結晶構造リガンドからGridBoxを生成する。
+        CompoundSetの1つめの構造を使用する。
+        
+        Args:
+            crystal_ligand: 結晶構造リガンドの構造データ
+        
+        Returns:
+            GridBoxオブジェクト
+        """
+        raise NotImplementedError("from_crystal_ligandメソッドは未実装です。")
