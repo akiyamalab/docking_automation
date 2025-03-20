@@ -86,20 +86,38 @@ class TaskManager:
         # 依存関係に基づいてタスクをソート
         # TODO: [DDD] 依存関係に基づいたソートを実装する
         
-        results = []
-        for task in self.tasks:
-            try:
-                # タスクを実行
-                result = actual_executor.execute(task)
-                results.append(result)
+        # 複数のタスクを並列実行
+        try:
+            # execute_manyメソッドが実装されている場合は、それを使用
+            if hasattr(actual_executor, 'execute_many') and callable(getattr(actual_executor, 'execute_many')):
+                results = actual_executor.execute_many(self.tasks)
                 # TODO: [DDD] ドメインイベントの登録機能を実装する
-                # self._register_domain_event("TaskExecuted", task.id)
-            except Exception as e:
-                # エラーハンドリング
-                # TODO: [DDD] エラーハンドリングを強化する
-                results.append(None)
-                # TODO: [DDD] ドメインイベントの登録機能を実装する
-                # self._register_domain_event("TaskFailed", task.id)
+                # for task in self.tasks:
+                #     self._register_domain_event("TaskExecuted", task.id)
+            else:
+                # execute_manyが実装されていない場合は、従来通り1つずつ実行
+                results = []
+                for task in self.tasks:
+                    try:
+                        # タスクを実行
+                        result = actual_executor.execute(task)
+                        results.append(result)
+                        # TODO: [DDD] ドメインイベントの登録機能を実装する
+                        # self._register_domain_event("TaskExecuted", task.id)
+                    except Exception as e:
+                        # エラーハンドリング
+                        # TODO: [DDD] エラーハンドリングを強化する
+                        results.append(None)
+                        # TODO: [DDD] ドメインイベントの登録機能を実装する
+                        # self._register_domain_event("TaskFailed", task.id)
+        except Exception as e:
+            # 並列実行中のエラーハンドリング
+            print(f"タスクの並列実行中にエラーが発生しました: {e}")
+            # すべてのタスクに対してNoneを返す
+            results = [None] * len(self.tasks)
+            # TODO: [DDD] ドメインイベントの登録機能を実装する
+            # for task in self.tasks:
+            #     self._register_domain_event("TaskFailed", task.id)
         
         return results
     

@@ -12,6 +12,8 @@ setup(
         "pydantic>=1.9.0",     # データバリデーション
         "typer>=0.6.0",        # CLIツール
         "dask>=2022.5.0",      # 並列計算
+        "dask-jobqueue>=0.8.0", # ジョブスケジューラ連携
+        "psutil>=5.9.0",       # システムリソース情報
         "matplotlib>=3.5.0",   # グラフ描画
         "scipy>=1.8.0",        # 科学計算
         "sortedcontainers>=2.4.0",  # ソート済みコンテナ
