@@ -1,7 +1,7 @@
 import gzip
 import uuid
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Iterator, Callable, Set
+from typing import Optional, List, Dict, Any, Iterator, Callable, Set, Tuple
 
 from docking_automation.domain.domain_event import DomainEvent
 from docking_automation.molecule.compound_set_events import CompoundSetRegistered, CompoundSetPathUpdated
@@ -32,6 +32,7 @@ class CompoundSet:
         self.__path: Path = Path(path)
         self.__id: str = id if id is not None else self.__path.stem
         self.__domain_events: List[DomainEvent] = []
+        self.__index_range: Optional[Tuple[int, int]] = None  # インデックス範囲（開始、終了）
         
         # 不変条件の検証
         if not self.__path.exists():
@@ -174,22 +175,93 @@ class CompoundSet:
         ))
         
         return new_compound_set
+        
+    def split_by_chunks(self, chunk_size: int) -> List['CompoundSet']:
+        """
+        # TODO: あとでdocstringを追加する
+        """
+        
+        # 分割されたCompoundSetのリスト
+        compound_sets = []
+        # 開始インデックス
+        start_index = 0
+
+        for i in range(0, self.get_compound_count(), chunk_size):
+            end_index = i + chunk_size
+            compound_set = self.with_index_range(start_index, end_index)
+            compound_sets.append(compound_set)
+            start_index = end_index
+            
+        # 端数処理
+        if start_index < self.get_compound_count():
+            compound_set = self.with_index_range(start_index, self.get_compound_count())
+            compound_sets.append(compound_set)
+                    
+        return compound_sets
+    
+    def with_index_range(self, start_index: int, end_index: int) -> 'CompoundSet':
+        """
+        指定されたインデックス範囲の化合物のみを含む新しいCompoundSetを作成する。
+        
+        元のCompoundSetと同じファイルを参照するが、処理対象のインデックス範囲が制限される。
+        不変性を維持するため、新しいインスタンスを返す。
+        
+        Args:
+            start_index: 開始インデックス（含む）
+            end_index: 終了インデックス（含まない）
+            
+        Returns:
+            インデックス範囲が制限された新しいCompoundSet
+            
+        Raises:
+            ValueError: インデックスが範囲外の場合
+        """
+        # インデックス範囲の検証
+        total_compounds = self.get_compound_count()
+        if start_index < 0 or start_index >= total_compounds:
+            raise ValueError(f"開始インデックス {start_index} は範囲外です（0-{total_compounds-1}）")
+        if end_index <= start_index or end_index > total_compounds:
+            raise ValueError(f"終了インデックス {end_index} は無効です（{start_index+1}-{total_compounds}）")
+        
+        # 新しいCompoundSetを作成（同じファイルを参照）
+        new_compound_set = CompoundSet(path=self.path, id=f"{self.id}_range_{start_index}_{end_index}")
+        
+        # インデックス範囲を保存するための属性を追加
+        # プライベート属性として追加し、外部からは直接アクセスできないようにする
+        new_compound_set.__index_range = (start_index, end_index)
+        
+        # ドメインイベントを登録（オプション）
+        # 新しいCompoundSetが作成されたことを表すイベントを登録
+        # 現時点では特定のイベントクラスがないため、汎用的なイベントを使用
+        
+        return new_compound_set
     
     # TODO: [P2] [DDD] 集約ルートとしての操作を追加する
     def get_compound(self, index: int) -> Dict[str, Any]:
         """
         指定されたインデックスの化合物を取得する。
         
+        インデックス範囲が設定されている場合は、その範囲内のインデックスのみが有効。
+        
         Args:
             index: 取得する化合物のインデックス
             
         Returns:
             化合物の情報を含む辞書
+            
+        Raises:
+            IndexError: インデックスが範囲外の場合
         """
-        # 現時点では空の辞書を返す
-        # 将来的には実際の化合物情報を返す
-        if index < 0 or index >= self.get_compound_count():
-            raise IndexError(f"インデックス {index} は範囲外です（0-{self.get_compound_count()-1}）")
+        # インデックス範囲が設定されている場合は、その範囲内かどうかをチェック
+        if self.__index_range is not None:
+            start_index, end_index = self.__index_range
+            if index < start_index or index >= end_index:
+                raise IndexError(f"インデックス {index} は設定された範囲外です（{start_index}-{end_index-1}）")
+        
+        # 全体の範囲内かどうかをチェック
+        total_compounds = self.get_compound_count()
+        if index < 0 or index >= total_compounds:
+            raise IndexError(f"インデックス {index} は範囲外です（0-{total_compounds-1}）")
         
         return {
             "index": index,
@@ -201,11 +273,17 @@ class CompoundSet:
         """
         すべての化合物を取得する。
         
+        インデックス範囲が設定されている場合は、その範囲内の化合物のみを返す。
+        
         Returns:
             化合物のリスト
         """
-        # 現時点では空のリストを返す
-        # 将来的には実際の化合物情報のリストを返す
+        # インデックス範囲が設定されている場合は、その範囲内の化合物のみを返す
+        if self.__index_range is not None:
+            start_index, end_index = self.__index_range
+            return [self.get_compound(i) for i in range(start_index, end_index)]
+        
+        # インデックス範囲が設定されていない場合は、すべての化合物を返す
         return [self.get_compound(i) for i in range(self.get_compound_count())]
     
     @classmethod
@@ -279,33 +357,63 @@ class CompoundSet:
         """
         化合物セットのイテレータを取得する。
         
+        インデックス範囲が設定されている場合は、その範囲内の化合物のみをイテレートする。
+        
         Returns:
             化合物のイテレータ
         """
-        for i in range(self.get_compound_count()):
-            yield self.get_compound(i)
+        # インデックス範囲が設定されている場合は、その範囲内の化合物のみをイテレートする
+        if self.__index_range is not None:
+            start_index, end_index = self.__index_range
+            for i in range(start_index, end_index):
+                yield self.get_compound(i)
+        else:
+            # インデックス範囲が設定されていない場合は、すべての化合物をイテレートする
+            for i in range(self.get_compound_count()):
+                yield self.get_compound(i)
     
     def __len__(self) -> int:
         """
         化合物セットの長さ（化合物の数）を取得する。
         
+        インデックス範囲が設定されている場合は、その範囲内の化合物の数を返す。
+        
         Returns:
             化合物の数
         """
+        # インデックス範囲が設定されている場合は、その範囲内の化合物の数を返す
+        if self.__index_range is not None:
+            start_index, end_index = self.__index_range
+            return end_index - start_index
+        
+        # インデックス範囲が設定されていない場合は、すべての化合物の数を返す
         return self.get_compound_count()
     
     def get_properties(self) -> Dict[str, Any]:
         """
         化合物セットのプロパティを取得する。
         
+        インデックス範囲が設定されている場合は、その情報も含める。
+        
         Returns:
             プロパティの辞書
         """
         # 基本的なプロパティを返す
-        return {
+        properties = {
             "id": self.id,
             "path": str(self.path),
             "file_format": self.path.suffix.lstrip('.'),
             "file_size": self.path.stat().st_size if self.path.exists() else 0,
-            "compound_count": self.get_compound_count()
+            "compound_count": len(self)  # __len__メソッドを使用して、インデックス範囲が設定されている場合はその範囲内の化合物の数を返す
         }
+        
+        # インデックス範囲が設定されている場合は、その情報も含める
+        if self.__index_range is not None:
+            start_index, end_index = self.__index_range
+            properties["index_range"] = {
+                "start": start_index,
+                "end": end_index,
+                "total_compounds": self.get_compound_count()  # 全体の化合物の数
+            }
+        
+        return properties

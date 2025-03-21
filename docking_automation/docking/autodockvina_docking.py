@@ -108,6 +108,7 @@ class AutoDockVina(DockingToolABC):
         AutoDock Vinaを使ってドッキング計算を実施する。
         
         複数の化合物に対してドッキング計算を行い、結果のリストを返す。
+        CompoundSetにインデックス範囲が設定されている場合は、その範囲内の化合物のみを処理する。
         
         Args:
             parameters: ドッキングパラメータ
@@ -168,7 +169,7 @@ class AutoDockVina(DockingToolABC):
                 
                 # Vinaオブジェクトを作成
                 # 並列計算は外側でやるので内部は1スレッドで実行
-                v = Vina(cpu=1)
+                v = Vina(cpu=1, seed=1)
                 
                 # 受容体を設定
                 v.set_receptor(str(protein.file_paths[0]))  # タンパク質は1つのみ

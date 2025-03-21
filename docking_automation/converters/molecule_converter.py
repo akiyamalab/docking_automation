@@ -247,6 +247,7 @@ class MoleculeConverter:
         meekoを使用して変換を行う。
         
         複数の化合物を含むSDFファイルに対応し、各化合物に対して個別のPDBQTファイルを生成する。
+        CompoundSetにインデックス範囲が設定されている場合は、その範囲内の化合物のみを処理する。
         
         Args:
             compound: 変換対象のCompoundSetオブジェクト
@@ -290,8 +291,21 @@ class MoleculeConverter:
                     
                     print(f"化合物の前処理を開始します...")
                     
+                    # CompoundSetのプロパティを取得して、インデックス範囲が設定されているかどうかを確認
+                    properties = compound.get_properties()
+                    index_range = properties.get("index_range")
+                    
+                    # インデックス範囲が設定されている場合は、その範囲内の化合物のみを処理
                     for idx, mol in enumerate(suppl):
                         total_count += 1
+                        
+                        # インデックス範囲が設定されている場合は、その範囲内かどうかをチェック
+                        if index_range is not None:
+                            start_index = index_range["start"]
+                            end_index = index_range["end"]
+                            if idx < start_index or idx >= end_index:
+                                continue
+                        
                         if mol is None:
                             print(f"警告: インデックス {idx} の化合物は無効です。スキップします。")
                             continue
