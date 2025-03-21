@@ -43,21 +43,11 @@ def run_parallel_docking():
     並列実行により、複数のCPUコアを活用して処理時間を短縮します。
     """
     
-    # Set up grid box and parameters
-    grid_box = GridBox(center=(15.0, 23.0, 36.0), size=(20.0, 20.0, 20.0))
-    additional_params = AutoDockVinaParameters()
-
-    # 現在のスクリプトのディレクトリを取得
-    print(f"タンパク質ファイルの絶対パス: {protein_path.absolute()}")
-    print(f"化合物ファイルの絶対パス: {compound_path.absolute()}")
-    
-    
-    protein = Protein(protein_path)
-    compound_set = CompoundSet(compound_path)
-    
     chunk_size = 2  # チャンク分割の差異の、チャンクあたりの化合物数
+    compound_set = CompoundSet(compound_path)
     compound_sets = compound_set.split_by_chunks(chunk_size)
     
+    # ドッキング計算タスクの作成
     docking_tool = AutoDockVina()
     docking_tasks: list[Task] = []
     for i, split_compound_set in enumerate(compound_sets):
@@ -65,44 +55,29 @@ def run_parallel_docking():
         task = Task.create(
             function=docking_tool.run_docking,
             args={
-                "protein": protein,
+                "protein": Protein(protein_path),
                 "compound_set": split_compound_set,
-                "grid_box": grid_box,
-                "additional_params": additional_params
+                "grid_box": GridBox(center=(15.0, 23.0, 36.0), size=(20.0, 20.0, 20.0)),
+                "additional_params": AutoDockVinaParameters()
             },
             id=f"docking_task_{i}"
         )
         docking_tasks.append(task)
 
-    # DaskExecutorの初期化
+    # タスクの登録と並列計算の実行
     executor = DaskExecutor(scheduler_type="local")
-    
-    # TaskManagerの初期化
     task_manager = TaskManager(executor=executor)
-    
-    # タスクをTaskManagerに追加
     for task in docking_tasks:
         task_manager.add_task(task)
-    
-    # タスクの並列実行
-    print(f"並列計算を開始します（タスク数: {len(docking_tasks)}）...")
     results = task_manager.execute_all()
 
-    # Process results
+    # 実行結果の統合
     all_docking_results = []
     for i, result in enumerate(results):
-        # DockingResultCollectionの場合、結果を統合
-        # TODO: get_all と get_all_results が両方あるのは不適切なので、統一する
-        if hasattr(result, 'get_all'):
-            task_results = result.get_all()
-            print(f"  - 結果数: {len(task_results)}")
-            all_docking_results.extend(task_results)
-        elif hasattr(result, 'get_all_results'):
-            task_results = result.get_all_results()
-            print(f"  - 結果数: {len(task_results)}")
-            all_docking_results.extend(task_results)
-        else:
-            print(f"  - 予期しない結果タイプ: {type(result)}")
+        # 結果を統合
+        task_results = result.get_all()
+        print(f"  - 結果数: {len(task_results)}")
+        all_docking_results.extend(task_results)
     
     # 統合された結果からトップヒットを取得
     combined_results = DockingResultCollection()
@@ -111,52 +86,14 @@ def run_parallel_docking():
     # トップヒットを表示
     top_hits = combined_results.get_top(10)  # 上位10件を表示
     print(f"\n全タスクの結果から上位 {len(top_hits)} 件:")
+    
+    
+    # 化合物セットのリストを作成
+    compound_sets = [task.args["compound_set"] for task in docking_tasks]
+    
     for j, hit in enumerate(top_hits):
-        # TODO: このあたりの処理はある程度の部分について DockingResult に適切に実装されているべき
-        
-        # 化合物IDを抽出（actives_subset_range_X_Yから元のインデックスを取得）
-        compound_id = hit.compound_set_id
-        original_index = hit.compound_index
-        
-        # 元のインデックスを取得するための処理
-        # 各タスクの実行結果を確認
-        for i, task_result in enumerate(results):
-            if task_result is not None:
-                
-                # タスクの化合物セットのIDを取得
-                # 対応するタスクを探す
-                for task in docking_tasks:
-                    task_compound_set = task.args["compound_set"]
-                    task_compound_set_id = task_compound_set.id
-                    # 注：この部分は上のループ内に移動しました
-                
-                # タスクの化合物セットのIDと一致する場合
-                if task_compound_set_id == compound_id:
-                    # インデックス範囲を取得
-                    properties = task_compound_set.get_properties()
-                    if "index_range" in properties:
-                        index_range = properties["index_range"]
-                        # 元のインデックスを計算
-                        original_index = index_range["start"] + hit.compound_index
-                        break
-        
-        # 結果を表示
-        print(f"{j+1}. Score: {hit.docking_score}, Compound: actives_subset_{original_index}")
-        
-        # 化合物の詳細情報を表示
-        # これも DockingResult の責務にすべき
-        if hit.metadata and "compound_name" in hit.metadata:
-            print(f"   化合物名: {hit.metadata['compound_name']}")
-        else:
-            # メタデータがない場合は化合物IDを表示
-            print(f"   化合物ID: actives_subset_{original_index}")
-            
-        # 必要に応じてメタデータの他の情報も表示
-        if hit.metadata:
-            if "scores" in hit.metadata and len(hit.metadata["scores"]) > 0:
-                # 全てのポーズのスコアを表示
-                scores = hit.metadata["scores"]
-                print(f"   全ポーズのスコア: {[float(s) for s in scores[0]]}")
+        scores = hit.metadata["scores"]
+        print(f"   全ポーズのスコア: {[float(s) for s in scores[0]]}")
     
     return results
 

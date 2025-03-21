@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Union
 
 
 # TODO: [DDD] 値オブジェクトとしての実装を強化する
@@ -114,6 +114,77 @@ class DockingResult:
             メタデータの値
         """
         return self.metadata.get(key, default)
+    
+    def get_original_index(self, compound_sets: List[Any]) -> int:
+        """
+        元の化合物インデックスを計算する。
+        
+        分割された化合物セットの場合、元のインデックスを計算して返す。
+        
+        Args:
+            compound_sets: 化合物セットのリスト
+            
+        Returns:
+            元の化合物インデックス
+        """
+        original_index = self.compound_index
+        
+        # 化合物セットのIDが一致するものを探す
+        for compound_set in compound_sets:
+            if compound_set.id == self.compound_set_id:
+                # インデックス範囲を取得
+                properties = compound_set.get_properties()
+                if "index_range" in properties:
+                    index_range = properties["index_range"]
+                    # 元のインデックスを計算
+                    original_index = index_range["start"] + self.compound_index
+                    break
+        
+        return original_index
+    
+    def format_result(self, rank: Optional[int] = None, original_index: Optional[int] = None) -> str:
+        """
+        結果を整形して文字列として返す。
+        
+        Args:
+            rank: 結果のランク（指定しない場合は表示しない）
+            original_index: 元の化合物インデックス（指定しない場合はcompound_indexを使用）
+            
+        Returns:
+            整形された結果文字列
+        """
+        # 元のインデックスが指定されていない場合は、compound_indexを使用
+        if original_index is None:
+            original_index = self.compound_index
+        
+        # ランクが指定されている場合は、ランクを表示
+        rank_str = f"{rank}. " if rank is not None else ""
+        
+        # 結果を整形
+        result_str = f"{rank_str}Score: {self.docking_score}, Compound: actives_subset_{original_index}"
+        
+        return result_str
+    
+    def get_compound_info(self, original_index: Optional[int] = None) -> str:
+        """
+        化合物の詳細情報を文字列として返す。
+        
+        Args:
+            original_index: 元の化合物インデックス（指定しない場合はcompound_indexを使用）
+            
+        Returns:
+            化合物の詳細情報
+        """
+        # 元のインデックスが指定されていない場合は、compound_indexを使用
+        if original_index is None:
+            original_index = self.compound_index
+        
+        # メタデータに化合物名がある場合は、それを返す
+        if "compound_name" in self.metadata:
+            return f"化合物名: {self.metadata['compound_name']}"
+        else:
+            # メタデータに化合物名がない場合は、化合物IDを返す
+            return f"化合物ID: actives_subset_{original_index}"
     
     # TODO: [DDD] 値オブジェクトの不変性を保持するメソッドを実装する
     def with_metadata(self, key: str, value: Any) -> 'DockingResult':
