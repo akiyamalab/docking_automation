@@ -7,23 +7,15 @@ DaskExecutorを使って複数のドッキング計算を並列実行するサ�
 化合物セットを複数のグループに分割し、それぞれを1つのタスクとして並列処理します。
 """
 
-from typing import List, Tuple
 import os
-import sys
-from io import StringIO
 from pathlib import Path
 
 # OpenBabelのwarningを完全に抑制するための設定
 os.environ["BABEL_QUIET"] = "1"
 
-from docking_automation.infrastructure.executor.task import Task
-from docking_automation.infrastructure.executor.task_manager import TaskManager
-from docking_automation.infrastructure.executor.dask_executor import DaskExecutor
-from docking_automation.docking.autodockvina_docking import AutoDockVina, AutoDockVinaParameters
-from docking_automation.docking.grid_box import GridBox
-from docking_automation.molecule.protein import Protein
-from docking_automation.molecule.compound_set import CompoundSet
-from docking_automation.docking.docking_result_collection import DockingResultCollection
+from docking_automation.infrastructure.executor import Task, TaskManager, DaskExecutor
+from docking_automation.docking import AutoDockVina, AutoDockVinaParameters, GridBox, DockingResultCollection
+from docking_automation.molecule import Protein, CompoundSet
 
 # 各種ファイルのパスをハードコーディング
 script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -71,17 +63,14 @@ def run_parallel_docking():
         task_manager.add_task(task)
     results = task_manager.execute_all()
 
-    # 実行結果の統合
-    all_docking_results = []
+    
+    # 統合された結果からトップヒットを取得
+    combined_results = DockingResultCollection()
     for i, result in enumerate(results):
         # 結果を統合
         task_results = result.get_all()
         print(f"  - 結果数: {len(task_results)}")
-        all_docking_results.extend(task_results)
-    
-    # 統合された結果からトップヒットを取得
-    combined_results = DockingResultCollection()
-    combined_results.extend(all_docking_results)
+        combined_results.extend(task_results)
     
     # トップヒットを表示
     top_hits = combined_results.get_top(10)  # 上位10件を表示

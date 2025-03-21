@@ -6,8 +6,7 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-from docking_automation.infrastructure.executor.task import Task, TaskStatus
-from docking_automation.infrastructure.executor.dask_executor import DaskExecutor
+from docking_automation.infrastructure.executor import Task, DaskExecutor
 
 
 class TestDaskExecutor:

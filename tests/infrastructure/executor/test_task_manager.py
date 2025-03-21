@@ -1,8 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from docking_automation.infrastructure.executor.task import Task
-from docking_automation.infrastructure.executor.task_manager import TaskManager
-from docking_automation.infrastructure.executor.executor import ExecutorABC
+from docking_automation.infrastructure.executor import Task, TaskManager, ExecutorABC
 
 
 class TestTaskManager:

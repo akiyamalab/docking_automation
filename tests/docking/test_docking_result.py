@@ -16,7 +16,8 @@ class TestDockingResult:
             protein_id="protein1",
             compound_set_id="compounds1",
             compound_index=0,
-            metadata={"tool": "AutoDock Vina", "score": -8.5}
+            docking_score=-8.5,
+            metadata={"tool": "AutoDock Vina"}
         )
     
     def test_initialization(self, sample_result):

@@ -1,5 +1,5 @@
 import pytest
-from docking_automation.infrastructure.executor.task import Task
+from docking_automation.infrastructure.executor import Task
 
 
 class TestTask:

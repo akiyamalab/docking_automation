@@ -7,7 +7,7 @@ from docking_automation.converters.molecule_converter import MoleculeConverter
 from docking_automation.docking.grid_box import GridBox
 from docking_automation.docking.docking_parameters import DockingParameters, CommonDockingParameters
 from docking_automation.docking.autodockvina_docking import AutoDockVina, AutoDockVinaParameters
-from docking_automation.infrastructure.executor.sequential_executor import SequentialExecutor
+from docking_automation.infrastructure.executor import DaskExecutor
 
 
 class TestDockingWorkflow:
@@ -77,7 +77,7 @@ $$$$
             size_z=20.0
         )
         docking_tool = AutoDockVina()
-        executor = SequentialExecutor()
+        executor = DaskExecutor()
         
         return {
             "protein": protein,
@@ -101,15 +101,13 @@ $$$$
         output_dir = setup_docking["output_dir"]
         
         # 前処理
-        preprocessed_protein = docking_tool.preprocess_protein(protein)
-        preprocessed_compound_set = docking_tool.preprocess_compound_set(compound_set)
+        preprocessed_protein = docking_tool._preprocess_protein(protein)
+        preprocessed_compound_set = docking_tool._preprocess_compound_set(compound_set)
         
         # ドッキングパラメータの設定
         common_params = CommonDockingParameters(
             protein=preprocessed_protein,
             compound_set=preprocessed_compound_set,
-            protein_file_path=preprocessed_protein.file_path,
-            compound_set_file_path=preprocessed_compound_set.file_path,
             grid_box=grid_box
         )
         
