@@ -22,5 +22,5 @@ jobs:
           options: -v ${{ github.workspace }}:/work
           run: |
             cd /work
-            pip install -e .
+            pip install -e .[dev]
             python -m pytest tests

@@ -2,7 +2,7 @@ FROM condaforge/miniforge3:24.11.3-2
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update
-RUN apt install -y wget
+RUN apt install -y wget openssh-client
 
 #### Anaconda ####
 RUN conda install -y -c conda-forge openbabel=3.1.1
