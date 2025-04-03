@@ -1,38 +1,5 @@
 {
-  "runArgs": [],
-  "name": "docking_automation",
-  "dockerFile": "Dockerfile",
-  "extensions": [
-    "github.copilot",
-    "ms-python.python",
-    "ms-python.vscode-pylance",
-    "ms-toolsai.jupyter",
-    "mhutchie.git-graph",
-    "shd101wyy.markdown-preview-enhanced"
-  ],
-  "settings": {
-    "python.analysis.typeCheckingMode": "basic",
-    "python.defaultInterpreterPath": "/opt/conda/bin/python",
-    "python.pythonPath": "/opt/conda/bin/python",
-    "python.analysis.extraPaths": [
-      "/opt/conda/lib/python3.11/site-packages/"
-    ],
-    "[python]": {
-      "editor.defaultFormatter": null
-    },
-    "editor.formatOnSave": true,
-    "python.formatting.provider": "autopep8",
-    "python.linting.enabled": true,
-    "python.linting.pylintEnabled": false,
-    "python.linting.flake8Enabled": true,
-    "python.linting.lintOnSave": true,
-    "python.linting.flake8Args": [
-      "--ignore",
-      "E501"
-    ],
-    "python.formatting.autopep8Args": [
-      "--ignore",
-      "E501"
-    ]
-  },
+    "runArgs": [],
+    "name": "docking_automation",
+    "dockerFile": "Dockerfile",
 }
