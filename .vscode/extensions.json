@@ -1,0 +1,11 @@
+{
+    "recommendations": [
+      "ms-python.black-formatter",
+      "ms-toolsai.jupyter",
+      "ms-python.python",
+      "ms-python.isort",
+      "mhutchie.git-graph",
+      "github.copilot",
+      "shd101wyy.markdown-preview-enhanced",
+    ]
+  }

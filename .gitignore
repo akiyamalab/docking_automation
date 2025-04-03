@@ -21,7 +21,6 @@ var/
 *.egg
 
 # VS Code 関連
-.vscode/
 .idea/
 *.swp
 *.swo
