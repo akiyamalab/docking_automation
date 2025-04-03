@@ -32,3 +32,13 @@ RUN cd /ADFRsuite_x86_64Linux_1.0 \
     && ./install.sh -d $ADFR_HOME/$ADFR_VER \
     && rm -r /ADFRsuite_x86_64Linux_1.0
 
+# conda should be prioritized compared to adfr
+ENV PATH /opt/conda/bin:/opt/conda/condabin:$PATH 
+
+# post processing
+RUN echo "alias ls='ls --color=auto'" >> /etc/bash.bashrc
+
+# ====== settings for git / ssh =======
+RUN echo "mkdir -p /root/.ssh" >> /etc/bash.bashrc
+RUN echo "cp /root/.ssh_host/* /root/.ssh/" >> /etc/bash.bashrc
+RUN echo "chmod 600 /root/.ssh/*" >> /etc/bash.bashrc
