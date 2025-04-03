@@ -1,0 +1,26 @@
+name: unittest
+
+on: [push]
+
+jobs:
+  buildx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Build
+        uses: docker/build-push-action@master
+        with:
+          context: .devcontainer
+          tags: docking_automation
+          push: false
+      
+      - name: Unittest
+        uses: addnab/docker-run-action@v3
+        with:
+          image: docking_automation
+          options: -v ${{ github.workspace }}:/work
+          run: |
+            cd /work
+            pip install -e .
+            python -m pytest tests
