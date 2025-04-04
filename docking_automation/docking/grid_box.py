@@ -1,7 +1,10 @@
-from typing import Optional, Tuple, Union
+from typing import Final, Optional, Tuple, Union
+
 import numpy as np
 import numpy.typing as npt
+from rdkit import Chem
 
+from docking_automation.converters.molecule_converter import MoleculeConverter
 from docking_automation.molecule.compound_set import CompoundSet
 
 # TODO: [DDD] 値オブジェクトとしての実装を強化する
@@ -10,18 +13,19 @@ from docking_automation.molecule.compound_set import CompoundSet
 # - __eq__と__hash__メソッドを実装して等価性比較を可能にする
 # - 値オブジェクト同士の演算メソッド（例：2つのGridBoxの結合や交差判定）を追加する
 
+
 # 値オブジェクト
 class GridBox:
     """
     ドッキング計算の領域を表すオブジェクト
-    
+
     TODO: [DDD] このクラスをdataclass(frozen=True)に変換し、不変性を確保する
     例:
     @dataclass(frozen=True)
     class GridBox:
         center: np.ndarray
         size: np.ndarray
-        
+
         def __post_init__(self):
             # 不変条件の検証
             if len(self.center) != 3 or len(self.size) != 3:
@@ -29,9 +33,10 @@ class GridBox:
             if any(s <= 0 for s in self.size):
                 raise ValueError("size はすべて正の値である必要があります")
     """
+
     __center: npt.NDArray[np.float64]
     __size: npt.NDArray[np.float64]
-    
+
     def __init__(
         self,
         center: Optional[Union[npt.NDArray[np.float64], Tuple[float, float, float]]] = None,
@@ -41,11 +46,11 @@ class GridBox:
         size: Optional[Union[npt.NDArray[np.float64], Tuple[float, float, float]]] = None,
         size_x: Optional[float] = None,
         size_y: Optional[float] = None,
-        size_z: Optional[float] = None
+        size_z: Optional[float] = None,
     ):
         """
         GridBoxオブジェクトを初期化する。
-        
+
         Args:
             center: 中心座標（NDArrayまたは(x, y, z)のタプル）
             center_x: 中心のx座標
@@ -55,7 +60,7 @@ class GridBox:
             size_x: x方向のサイズ
             size_y: y方向のサイズ
             size_z: z方向のサイズ
-        
+
         Examples:
             >>> # タプルを使った初期化
             >>> grid_box = GridBox(center=(10.0, 10.0, 10.0), size=(20.0, 20.0, 20.0))
@@ -75,8 +80,10 @@ class GridBox:
         elif center_x is not None and center_y is not None and center_z is not None:
             self.__center = np.array([center_x, center_y, center_z], dtype=np.float64)
         else:
-            raise ValueError("中心座標が指定されていません。centerまたはcenter_x, center_y, center_zを指定してください。")
-        
+            raise ValueError(
+                "中心座標が指定されていません。centerまたはcenter_x, center_y, center_zを指定してください。"
+            )
+
         # サイズの初期化
         if size is not None:
             if isinstance(size, tuple):
@@ -87,37 +94,122 @@ class GridBox:
             self.__size = np.array([size_x, size_y, size_z], dtype=np.float64)
         else:
             raise ValueError("サイズが指定されていません。sizeまたはsize_x, size_y, size_zを指定してください。")
-    
+
     @property
     def center(self) -> npt.NDArray[np.float64]:
         """
         中心座標を取得する。
-        
+
         Returns:
             中心座標
         """
         return self.__center.copy()
-    
+
     @property
     def size(self) -> npt.NDArray[np.float64]:
         """
         サイズを取得する。
-        
+
         Returns:
             サイズ
         """
         return self.__size.copy()
 
     @classmethod
-    def from_crystal_ligand(cls, crystal_ligand: CompoundSet) -> 'GridBox':
+    def from_crystal_ligand(cls, crystal_ligand: CompoundSet) -> "GridBox":
         """
         結晶構造リガンドからGridBoxを生成する。
         CompoundSetの1つめの構造を使用する。
-        
+
         Args:
             crystal_ligand: 結晶構造リガンドの構造データ
-        
+
         Returns:
             GridBoxオブジェクト
         """
         raise NotImplementedError("from_crystal_ligandメソッドは未実装です。")
+
+    @classmethod
+    def _eboxsize(cls, mol: Chem.Mol) -> int:
+        """
+        eBoxSizeアルゴリズムを使用してボックスサイズを計算する。
+        https://www.brylinski.org/eboxsize
+
+        Args:
+            mol: RDKitの分子オブジェクト
+
+        Returns:
+            ボックスサイズ（偶数）
+        """
+        _GY_BOX_RATIO: Final[float] = 0.23
+
+        # 重原子（水素以外の原子）の座標を取得
+        coords = []
+        conf = mol.GetConformer()
+        for atom_idx in range(mol.GetNumAtoms()):
+            atom = mol.GetAtomWithIdx(atom_idx)
+            if atom.GetAtomicNum() > 1:  # 水素以外の原子
+                pos = conf.GetAtomPosition(atom_idx)
+                coords.append([pos.x, pos.y, pos.z])
+
+        # NumPy配列に変換
+        coords_array = np.array(coords)
+
+        # 中心座標を計算
+        center = coords_array.mean(axis=0)
+
+        # 回転半径の二乗を計算
+        sq_gyration = ((coords_array - center) ** 2).sum(axis=1).mean()
+
+        # ボックスサイズを計算
+        size = sq_gyration**0.5 / _GY_BOX_RATIO
+
+        # 偶数に丸める（切り上げ）
+        return int((size + 1) / 2) * 2
+
+    @classmethod
+    def from_compound(cls, compound: CompoundSet) -> "GridBox":
+        """
+        化合物からGridBoxを生成する。
+        CompoundSetの1つめの構造を使用する。
+
+        Args:
+            compound: 化合物の構造データ
+
+        Returns:
+            GridBoxオブジェクト
+        """
+        # MoleculeConverterのインスタンスを作成
+        converter = MoleculeConverter()
+
+        # CompoundSetからRDKitの分子オブジェクトに変換
+        mols = converter.compound_to_rdkit(compound)
+
+        # 最初の分子を使用
+        if not mols:
+            raise ValueError("化合物が見つかりません")
+        mol = mols[0]
+
+        # 重原子（水素以外の原子）の座標を取得
+        coords = []
+        conf = mol.GetConformer()
+        for atom_idx in range(mol.GetNumAtoms()):
+            atom = mol.GetAtomWithIdx(atom_idx)
+            if atom.GetAtomicNum() > 1:  # 水素以外の原子
+                pos = conf.GetAtomPosition(atom_idx)
+                coords.append([pos.x, pos.y, pos.z])
+
+        # NumPy配列に変換
+        coords_array = np.array(coords)
+
+        # 中心座標を計算
+        center = coords_array.mean(axis=0)
+
+        # eBoxSizeアルゴリズムでボックスサイズを計算
+        box_size = cls._eboxsize(mol)
+
+        # すべての方向に同じサイズを使用
+        size = np.array([box_size, box_size, box_size], dtype=np.float64)
+
+        # GridBoxオブジェクトを作成して返す
+        return cls(center=center, size=size)

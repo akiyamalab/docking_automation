@@ -1,22 +1,22 @@
 # type: ignore
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="docking_automation",
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
-        "numpy",    
-        "pandas",     
-        "dask",    
+        "pandas",
+        "dask",
         "dask-jobqueue",
-        "matplotlib",   
-        "scipy",      
-        "sortedcontainers",  
-        "openbabel-wheel>=3.0.0",  
-        "rdkit==2023.9.1",        # meekoの関係で2023.9.6より新しいものは使えない、2023.9.6はrdkit-stubsのバグで使えない
+        "matplotlib",
+        "scipy",
+        "sortedcontainers",
+        "openbabel-wheel>=3.0.0",
+        "numpy<2.0.0",  # rdkit の都合でnumpyは2.0.0未満
+        "rdkit==2023.9.1",  # meekoの関係で2023.9.6より新しいものは使えない、2023.9.6はrdkit-stubsのバグで使えない
         "rdkit-stubs",
-        "meeko==0.5.0",         
+        "meeko==0.5.0",
     ],
     extras_require={
         "dev": [
