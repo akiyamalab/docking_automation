@@ -5,7 +5,8 @@ RUN apt update
 RUN apt install -y wget openssh-client
 
 #### Anaconda ####
-RUN conda install -y -c conda-forge openbabel=3.1.1
+RUN mamba install -y -c conda-forge openbabel=3.1.1
+RUN mamba install -y -c conda-forge fpocket
 
 #### AutoDock Vina ####
 RUN pip install vina

@@ -1,4 +1,4 @@
-from typing import Final, Optional, Tuple, Union
+from typing import Final, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -6,6 +6,7 @@ from rdkit import Chem
 
 from docking_automation.converters.molecule_converter import MoleculeConverter
 from docking_automation.molecule.compound_set import CompoundSet
+from docking_automation.molecule.protein import Protein
 
 # TODO: [DDD] 値オブジェクトとしての実装を強化する
 # - dataclass(frozen=True)への変換を検討する
@@ -114,6 +115,56 @@ class GridBox:
             サイズ
         """
         return self.__size.copy()
+
+    @classmethod
+    def from_fpocket(cls, protein: Protein, pocket_rank: int = 1, keep_temp_files: bool = False) -> "GridBox":
+        """
+        fpocketを使用してタンパク質のポケット位置を予測し、GridBoxを生成する。
+
+        Args:
+            protein: 対象のタンパク質
+            pocket_rank: ポケットのランク（1が最も有望）
+            keep_temp_files: 一時ファイルを保持するかどうか。デバッグ目的で使用。
+
+        Returns:
+            予測されたGridBoxオブジェクト
+
+        Raises:
+            ValueError: fpocketの実行に失敗した場合や、指定されたランクのポケットが見つからない場合
+        """
+        # 循環インポートを避けるため、実行時にインポート
+        from docking_automation.docking.fpocket_grid_box_predictor import (
+            FpocketGridBoxPredictor,
+        )
+
+        # FpocketGridBoxPredictorを内部実装として使用
+        predictor = FpocketGridBoxPredictor(keep_temp_files=keep_temp_files)
+        return predictor.predict(protein, pocket_rank)
+
+    @classmethod
+    def from_fpocket_all(cls, protein: Protein, max_pockets: int = 3, keep_temp_files: bool = False) -> List["GridBox"]:
+        """
+        fpocketを使用してタンパク質の複数のポケット位置を予測し、GridBoxのリストを生成する。
+
+        Args:
+            protein: 対象のタンパク質
+            max_pockets: 予測する最大ポケット数
+            keep_temp_files: 一時ファイルを保持するかどうか。デバッグ目的で使用。
+
+        Returns:
+            予測されたGridBoxオブジェクトのリスト
+
+        Raises:
+            ValueError: fpocketの実行に失敗した場合
+        """
+        # 循環インポートを避けるため、実行時にインポート
+        from docking_automation.docking.fpocket_grid_box_predictor import (
+            FpocketGridBoxPredictor,
+        )
+
+        # FpocketGridBoxPredictorを内部実装として使用
+        predictor = FpocketGridBoxPredictor(keep_temp_files=keep_temp_files)
+        return predictor.predict_all(protein, max_pockets)
 
     @classmethod
     def from_crystal_ligand(cls, crystal_ligand: CompoundSet) -> "GridBox":

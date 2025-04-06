@@ -56,7 +56,7 @@ def _convert_mol2_to_sdf(mol2_path: Path) -> Path:
     return temp_path
 
 
-def _get_grid_box_from_crystal_ligand() -> GridBox:
+def _get_grid_box_from_crystal_ligand(crystal_ligand_path) -> GridBox:
     """
     結晶リガンドからGridBoxを生成する
 
@@ -99,12 +99,26 @@ def run_parallel_docking():
     docking_tasks: list[Task] = []
     for i, split_compound_set in enumerate(compound_sets):
         # 各分割された化合物セットに対してタスクを作成
+
+        # # 例1: GridBoxを結晶リガンドから取得
+        # task = Task.create(
+        #     function=docking_tool.run_docking,
+        #     args={
+        #         "protein": Protein(protein_path),
+        #         "compound_set": split_compound_set,
+        #         "grid_box": _get_grid_box_from_crystal_ligand(crystal_ligand_path),
+        #         "additional_params": AutoDockVinaParameters(),
+        #     },
+        #     id=f"docking_task_{i}",
+        # )
+
+        # 例2: GridBoxをfpocketから取得
         task = Task.create(
             function=docking_tool.run_docking,
             args={
                 "protein": Protein(protein_path),
                 "compound_set": split_compound_set,
-                "grid_box": _get_grid_box_from_crystal_ligand(),
+                "grid_box": GridBox.from_fpocket(Protein(protein_path)),
                 "additional_params": AutoDockVinaParameters(),
             },
             id=f"docking_task_{i}",
