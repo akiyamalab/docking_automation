@@ -89,15 +89,21 @@ class FpocketGridBoxPredictor:
                 return grid_boxes
 
             finally:
+                # fpocketの出力ディレクトリのパスを取得
+                output_name = protein.path.stem
+                fpocket_output_dir = protein.path.parent / f"{output_name}_out"
+
                 # 一時ファイルを保持する場合
                 if self.__keep_temp_files:
                     # fpocketの出力ディレクトリをコピー
-                    output_name = protein.path.stem
-                    fpocket_output_dir = protein.path.parent / f"{output_name}_out"
                     if fpocket_output_dir.exists():
                         target_dir = protein.path.parent / f"{output_name}_fpocket_debug"
                         shutil.copytree(fpocket_output_dir, target_dir, dirs_exist_ok=True)
                         print(f"デバッグ用にfpocketの出力を保存しました: {target_dir}")
+                else:
+                    # 一時ファイルを保持しない場合は、fpocketの出力ディレクトリを削除
+                    if fpocket_output_dir.exists():
+                        shutil.rmtree(fpocket_output_dir)
 
     def _run_fpocket(self, protein_path: Path, output_dir: Path) -> Path:
         """
