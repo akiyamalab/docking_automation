@@ -108,7 +108,7 @@ class AutoDockVina(DockingToolABC):
         # 前処理済みの化合物セットを返す
         return PreprocessedCompoundSet(file_paths=pdbqt_paths)
 
-    def dock(self, parameters: DockingParameters) -> List[DockingResult]:
+    def dock(self, parameters: DockingParameters, verbose: bool=False) -> List[DockingResult]:
         """
         AutoDock Vinaを使ってドッキング計算を実施する。
 
@@ -158,15 +158,18 @@ class AutoDockVina(DockingToolABC):
         # 処理する化合物の数を決定
         if max_compounds is not None and max_compounds > 0 and max_compounds < task_compounds:
             compounds_to_process = compound_set.file_paths[:max_compounds]
-            print(f"ドッキング計算を開始します（全{task_compounds}化合物中、最初の{max_compounds}化合物）...")
+            if verbose:
+                print(f"ドッキング計算を開始します（全{task_compounds}化合物中、最初の{max_compounds}化合物）...")
         else:
             compounds_to_process = compound_set.file_paths
-            print(f"ドッキング計算を開始します（全{task_compounds}化合物）...")
+            if verbose:
+                print(f"ドッキング計算を開始します（全{task_compounds}化合物）...")
 
         # 各化合物に対してドッキング計算を実行
         for idx, compound_path in enumerate(compounds_to_process):
             try:
-                print(f"化合物 {idx+1}/{len(compounds_to_process)} を処理中...")
+                if verbose:
+                    print(f"化合物 {idx+1}/{len(compounds_to_process)} を処理中...")
 
                 # 結果ファイルのパス（化合物ごとに区別）
                 output_pdbqt = temp_dir / f"output_{idx}.pdbqt"
@@ -174,7 +177,7 @@ class AutoDockVina(DockingToolABC):
 
                 # Vinaオブジェクトを作成
                 # 並列計算は外側でやるので内部は1スレッドで実行
-                v = Vina(cpu=1, seed=1)
+                v = Vina(cpu=1, seed=1, verbosity=0)
 
                 # 受容体を設定
                 v.set_receptor(str(protein.file_paths[0]))  # タンパク質は1つのみ
@@ -220,14 +223,16 @@ class AutoDockVina(DockingToolABC):
                 )
 
                 results.append(result)
-                print(f"化合物 {idx+1}/{len(compounds_to_process)} の処理が完了しました（スコア: {scores[0,0]}）")
+                if verbose:
+                    print(f"化合物 {idx+1}/{len(compounds_to_process)} のドッキング計算が完了しました（スコア: {scores[0,0]}）")
 
             except Exception as e:
                 print(f"化合物 {idx+1}/{len(compounds_to_process)} の処理中にエラーが発生しました: {str(e)}")
                 # エラーが発生しても処理を継続
                 continue
 
-        print(f"ドッキング計算が完了しました（成功: {len(results)}/{len(compounds_to_process)}）")
+        if verbose:
+            print(f"ドッキング計算が完了しました（成功: {len(results)}/{len(compounds_to_process)}）")
 
         if not results:
             raise ValueError("有効なドッキング結果が得られませんでした。")

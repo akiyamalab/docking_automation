@@ -17,6 +17,7 @@ setup(
         "rdkit==2023.9.1",  # meekoの関係で2023.9.6より新しいものは使えない、2023.9.6はrdkit-stubsのバグで使えない
         "rdkit-stubs",
         "meeko==0.5.0",
+        "tqdm", 
         # 以下は alphacutter の依存関係
         "biopython",
         "biopandas",

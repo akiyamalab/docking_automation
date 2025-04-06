@@ -250,7 +250,7 @@ class MoleculeConverter:
             # 一時ディレクトリを削除
             shutil.rmtree(temp_dir)
 
-    def compound_to_pdbqt(self, compound: CompoundSet, output_dir: Path) -> List[Path]:
+    def compound_to_pdbqt(self, compound: CompoundSet, output_dir: Path, verbose: bool=False) -> List[Path]:
         """
         CompoundSetオブジェクトからpdbqtファイルに変換する。
         meekoを使用して変換を行う。
@@ -307,12 +307,14 @@ class MoleculeConverter:
                         start_index = index_range["start"]
                         end_index = index_range["end"]
                         task_compounds = end_index - start_index
-                        print(
-                            f"化合物の前処理を開始します（インデックス範囲: {start_index}-{end_index-1}、化合物数: {task_compounds}）..."
-                        )
+                        if verbose:
+                            print(
+                                f"化合物の前処理を開始します（インデックス範囲: {start_index}-{end_index-1}、化合物数: {task_compounds}）..."
+                            )
                     else:
-                        # インデックス範囲が設定されていない場合は、全体の化合物数を表示
-                        print(f"化合物の前処理を開始します...")
+                        if verbose:
+                            # インデックス範囲が設定されていない場合は、全体の化合物数を表示
+                            print(f"化合物の前処理を開始します...")
 
                     # インデックス範囲が設定されている場合は、その範囲内の化合物のみを処理
                     for idx, mol in enumerate(suppl):
@@ -354,17 +356,14 @@ class MoleculeConverter:
                             pdbqt_paths.append(output_path)
                             valid_count += 1
 
-                            if valid_count % 10 == 0:
+                            if verbose and valid_count % 10 == 0:
                                 print(f"進捗: {valid_count}/{total_count} 化合物を処理しました")
 
                         except Exception as e:
                             print(f"警告: インデックス {idx} の化合物の処理中にエラーが発生しました: {e}")
                             continue
 
-                    # インデックス範囲が設定されている場合は、その範囲内の化合物数を表示
-                    if index_range is not None:
-                        print(f"化合物の前処理が完了しました（成功: {valid_count}/{total_count}）")
-                    else:
+                    if verbose:
                         print(f"化合物の前処理が完了しました（成功: {valid_count}/{total_count}）")
 
                     if not pdbqt_paths:

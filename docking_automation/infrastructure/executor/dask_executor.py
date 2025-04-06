@@ -9,6 +9,7 @@ import os
 import uuid
 import importlib.util
 from abc import ABC, abstractmethod
+from tqdm import tqdm
 
 from .executor import ExecutorABC
 from .task import Task, TaskStatus
@@ -128,7 +129,6 @@ class DaskExecutor(ExecutorABC):
             for i, task in enumerate(tasks):
                 # タスクの状態を更新
                 task.status = TaskStatus.RUNNING
-                print(f"タスク {i} を準備中...")
                 
                 # 遅延実行オブジェクトを作成
                 delayed_result = delayed(task.execute)()
@@ -138,9 +138,17 @@ class DaskExecutor(ExecutorABC):
             print(f"タスクを並列実行中...")
             futures = client.compute(delayed_results)
             
-            # 結果を取得（同期）
+            # 結果を取得（同期）- tqdmを使用して進捗状況と推定残り時間を表示
             print(f"結果を取得中...")
-            results = client.gather(futures)
+            # tqdmを使用して進捗バーを表示
+            with tqdm(total=len(futures), desc="処理進捗", unit="タスク") as pbar:
+                results = []
+                for future in futures:
+                    # 1つのタスクの結果を取得
+                    result = client.gather(future)
+                    results.append(result)
+                    # 進捗バーを更新
+                    pbar.update(1)
             
             # タスクの状態を更新
             for i, (task, result) in enumerate(zip(tasks, results)):

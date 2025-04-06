@@ -85,7 +85,6 @@ class DockingToolABC(ABC):
         if index_range is not None:
             start_index = index_range["start"]
             end_index = index_range["end"]
-            print(f"インデックス範囲 {start_index}-{end_index-1} の化合物のみを処理します（全{len(compound_set)}化合物中の{end_index-start_index}化合物）")
         
         # 前処理
         preprocessed_protein = self._preprocess_protein(protein)

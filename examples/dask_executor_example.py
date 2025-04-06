@@ -90,35 +90,24 @@ def run_parallel_docking():
     並列実行により、複数のCPUコアを活用して処理時間を短縮します。
     """
 
-    chunk_size = 2  # チャンク分割の差異の、チャンクあたりの化合物数
+    chunk_size = 1  # チャンク分割の差異の、チャンクあたりの化合物数
     compound_set = CompoundSet(compound_path)
     compound_sets = compound_set.split_by_chunks(chunk_size)
 
     # ドッキング計算タスクの作成
     docking_tool = AutoDockVina()
     docking_tasks: list[Task] = []
+    # grid_box = _get_grid_box_from_crystal_ligand(crystal_ligand_path)  # 例1: GridBoxを結晶リガンドから取得
+    grid_box = GridBox.from_fpocket(Protein(protein_path))  # 例2: GridBoxをfpocketから取得
+
     for i, split_compound_set in enumerate(compound_sets):
         # 各分割された化合物セットに対してタスクを作成
-
-        # # 例1: GridBoxを結晶リガンドから取得
-        # task = Task.create(
-        #     function=docking_tool.run_docking,
-        #     args={
-        #         "protein": Protein(protein_path),
-        #         "compound_set": split_compound_set,
-        #         "grid_box": _get_grid_box_from_crystal_ligand(crystal_ligand_path),
-        #         "additional_params": AutoDockVinaParameters(),
-        #     },
-        #     id=f"docking_task_{i}",
-        # )
-
-        # 例2: GridBoxをfpocketから取得
         task = Task.create(
             function=docking_tool.run_docking,
             args={
                 "protein": Protein(protein_path),
                 "compound_set": split_compound_set,
-                "grid_box": GridBox.from_fpocket(Protein(protein_path)),
+                "grid_box": grid_box,
                 "additional_params": AutoDockVinaParameters(),
             },
             id=f"docking_task_{i}",
@@ -126,7 +115,7 @@ def run_parallel_docking():
         docking_tasks.append(task)
 
     # タスクの登録と並列計算の実行
-    executor = DaskExecutor(scheduler_type="local")
+    executor = DaskExecutor(scheduler_type="local", n_workers=None)
     task_manager = TaskManager(executor=executor)
     for task in docking_tasks:
         task_manager.add_task(task)

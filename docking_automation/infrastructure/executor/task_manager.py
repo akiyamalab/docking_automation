@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional, Set, Tuple, Callable
 from enum import Enum
+from tqdm import tqdm
 
 from .task import Task, TaskStatus
 from .executor import ExecutorABC
@@ -97,7 +98,8 @@ class TaskManager:
             else:
                 # execute_manyが実装されていない場合は、従来通り1つずつ実行
                 results = []
-                for task in self.tasks:
+                # tqdmを使用して進捗バーを表示
+                for task in tqdm(self.tasks, desc="タスク実行進捗", unit="タスク"):
                     try:
                         # タスクを実行
                         result = actual_executor.execute(task)
