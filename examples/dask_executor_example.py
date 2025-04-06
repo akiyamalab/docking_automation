@@ -126,7 +126,6 @@ def run_parallel_docking():
     for i, result in enumerate(results):
         # 結果を統合
         task_results = result.get_all()
-        print(f"  - 結果数: {len(task_results)}")
         combined_results.extend(task_results)
 
     # トップヒットを表示

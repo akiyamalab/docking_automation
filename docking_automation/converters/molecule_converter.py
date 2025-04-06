@@ -2,9 +2,7 @@ import gzip
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
-from io import StringIO
 from pathlib import Path
 from typing import Any, List
 
@@ -12,8 +10,8 @@ from typing import Any, List
 import openbabel.openbabel as ob  # type: ignore[import-untyped]
 import openbabel.pybel as pybel  # type: ignore[import-untyped]
 from rdkit import Chem
-from rdkit.Chem import AllChem
 
+from docking_automation.infrastructure.utilities.error_utils import capture_stderr
 from docking_automation.molecule.compound_set import CompoundSet
 from docking_automation.molecule.protein import Protein
 
@@ -52,24 +50,19 @@ class MoleculeConverter:
         if file_format.lower() != "pdb":
             raise ValueError(f"サポートされていないファイル形式です: {file_format}")
 
-        # MEMO: これ以外の方法で openbabel の warning を抑制する方法はあるのか？
-        # 元の標準エラー出力を保存
-        original_stderr = sys.stderr
-        # 標準エラー出力を一時的なバッファにリダイレクト
-        if quiet:
-            sys.stderr = StringIO()
-
         try:
-            # PDBファイルを読み込む
-            mol: pybel.Molecule = next(pybel.readfile(file_format, str(protein.path)))
+            if quiet:
+                # 標準エラー出力をキャプチャ
+                with capture_stderr():
+                    # PDBファイルを読み込む
+                    mol: pybel.Molecule = next(pybel.readfile(file_format, str(protein.path)))
+                print(f"タンパク質ファイル {protein.path.name} を読み込みました。")
+            else:
+                # 標準エラー出力をそのまま表示
+                mol = next(pybel.readfile(file_format, str(protein.path)))
             return mol
         except Exception as e:
             raise ValueError(f"タンパク質ファイル {protein.path.name} の読み込み中にエラーが発生しました")
-        finally:
-            # 標準エラー出力を元に戻す
-            if quiet:
-                sys.stderr = original_stderr
-                print(f"タンパク質ファイル {protein.path.name} を読み込みました。")
 
     # TODO: id は与えられなくても良い。その場合は UUID のようなものが生成されるように Protein 側でなっている。
     def openbabel_to_protein(self, ob_mol: Any, id: str, output_path: Path) -> Protein:
@@ -192,22 +185,14 @@ class MoleculeConverter:
 
             # pybelを使用して分子を読み込む
             try:
-                # 元の標準エラー出力を保存
-                original_stderr = sys.stderr
-                # 標準エラー出力を一時的なバッファにリダイレクト
-                sys.stderr = StringIO()
+                # 標準エラー出力をキャプチャ
+                with capture_stderr():
+                    # 分子を読み込む
+                    mol = next(pybel.readfile(file_format, str(protein.path)))
 
-                # 分子を読み込む
-                mol = next(pybel.readfile(file_format, str(protein.path)))
-
-                # 水素原子を削除
-                mol.OBMol.DeleteHydrogens()
-
-                # 標準エラー出力を元に戻す
-                sys.stderr = original_stderr
+                    # 水素原子を削除
+                    mol.OBMol.DeleteHydrogens()
             except Exception as e:
-                # 標準エラー出力を元に戻す
-                sys.stderr = original_stderr
                 raise ValueError(f"タンパク質ファイル {protein.path.name} の処理中にエラーが発生しました: {e}")
 
             # 水素原子を削除した一時ファイルのパス
@@ -250,7 +235,32 @@ class MoleculeConverter:
             # 一時ディレクトリを削除
             shutil.rmtree(temp_dir)
 
-    def compound_to_pdbqt(self, compound: CompoundSet, output_dir: Path, verbose: bool=False) -> List[Path]:
+    def _convert_to_pdbqt_with_meeko(self, mol: Chem.Mol, output_path: Path) -> Path:
+        """
+        RDKitの分子オブジェクトをmeekoを使用してPDBQTに変換する。
+
+        Args:
+            mol: 変換対象のRDKit分子オブジェクト
+            output_path: 出力先のパス
+
+        Returns:
+            生成されたPDBQTファイルのパス
+        """
+        # 明示的な水素原子を追加
+        mol_with_h = Chem.AddHs(mol)
+
+        # meekoを使用してPDBQTに変換
+        preparator = MoleculePreparation()
+        preparator.prepare(mol_with_h)
+        pdbqt_string = preparator.write_pdbqt_string()
+
+        # PDBQTファイルに保存
+        with open(output_path, "w") as f:
+            f.write(pdbqt_string)
+
+        return output_path
+
+    def compound_to_pdbqt(self, compound: CompoundSet, output_dir: Path, verbose: bool = False) -> List[Path]:
         """
         CompoundSetオブジェクトからpdbqtファイルに変換する。
         meekoを使用して変換を行う。
@@ -336,17 +346,8 @@ class MoleculeConverter:
                             # 出力ファイルのパス
                             output_path = output_dir / f"{compound.id}_{idx}.pdbqt"
 
-                            # 明示的な水素原子を追加
-                            mol_with_h = Chem.AddHs(mol)
-
                             # meekoを使用してPDBQTに変換
-                            preparator = MoleculePreparation()
-                            preparator.prepare(mol_with_h)
-                            pdbqt_string = preparator.write_pdbqt_string()
-
-                            # PDBQTファイルに保存
-                            with open(output_path, "w") as f:
-                                f.write(pdbqt_string)
+                            self._convert_to_pdbqt_with_meeko(mol, output_path)
 
                             # ファイルが空の場合はエラー
                             if output_path.stat().st_size == 0:
