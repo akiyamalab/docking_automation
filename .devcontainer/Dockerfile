@@ -33,6 +33,11 @@ RUN cd /ADFRsuite_x86_64Linux_1.0 \
     && ./install.sh -d $ADFR_HOME/$ADFR_VER \
     && rm -r /ADFRsuite_x86_64Linux_1.0
 
+#### AlphaCutter
+RUN apt update && apt install -y gcc
+RUN apt install -y dssp
+RUN mkdir -p /AlphaCutter
+RUN wget https://raw.githubusercontent.com/johnnytam100/AlphaCutter/c1b8a96024f71509ac700ef232f632c13e40a886/AlphaCutter_v111.py -O /AlphaCutter/AlphaCutter_v111.py
 # conda should be prioritized compared to adfr
 ENV PATH /opt/conda/bin:/opt/conda/condabin:$PATH 
 

@@ -200,7 +200,7 @@ class GridBox:
         for atom_idx in range(mol.GetNumAtoms()):
             atom = mol.GetAtomWithIdx(atom_idx)
             if atom.GetAtomicNum() > 1:  # 水素以外の原子
-                pos = conf.GetAtomPosition(atom_idx)
+                pos = conf.GetAtomPosition(atom_idx)  # type: ignore
                 coords.append([pos.x, pos.y, pos.z])
 
         # NumPy配列に変換
@@ -247,7 +247,7 @@ class GridBox:
         for atom_idx in range(mol.GetNumAtoms()):
             atom = mol.GetAtomWithIdx(atom_idx)
             if atom.GetAtomicNum() > 1:  # 水素以外の原子
-                pos = conf.GetAtomPosition(atom_idx)
+                pos = conf.GetAtomPosition(atom_idx)  # type: ignore
                 coords.append([pos.x, pos.y, pos.z])
 
         # NumPy配列に変換
