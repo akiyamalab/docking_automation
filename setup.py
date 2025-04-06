@@ -18,6 +18,7 @@ setup(
         "rdkit-stubs",
         "meeko==0.5.0",
         "tqdm", 
+        "types-tqdm",
         # 以下は alphacutter の依存関係
         "biopython",
         "biopandas",
