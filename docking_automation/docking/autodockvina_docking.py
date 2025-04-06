@@ -108,7 +108,7 @@ class AutoDockVina(DockingToolABC):
         # 前処理済みの化合物セットを返す
         return PreprocessedCompoundSet(file_paths=pdbqt_paths)
 
-    def dock(self, parameters: DockingParameters, verbose: bool=False) -> List[DockingResult]:
+    def dock(self, parameters: DockingParameters, verbose: bool = False) -> List[DockingResult]:
         """
         AutoDock Vinaを使ってドッキング計算を実施する。
 
@@ -224,7 +224,9 @@ class AutoDockVina(DockingToolABC):
 
                 results.append(result)
                 if verbose:
-                    print(f"化合物 {idx+1}/{len(compounds_to_process)} のドッキング計算が完了しました（スコア: {scores[0,0]}）")
+                    print(
+                        f"化合物 {idx+1}/{len(compounds_to_process)} のドッキング計算が完了しました（スコア: {scores[0,0]}）"
+                    )
 
             except Exception as e:
                 print(f"化合物 {idx+1}/{len(compounds_to_process)} の処理中にエラーが発生しました: {str(e)}")

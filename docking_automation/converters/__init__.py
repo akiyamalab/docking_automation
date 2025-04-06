@@ -6,6 +6,4 @@ docking_automation.converters パッケージ
 
 from .molecule_converter import MoleculeConverter
 
-__all__ = [
-    "MoleculeConverter"
-]
+__all__ = ["MoleculeConverter"]

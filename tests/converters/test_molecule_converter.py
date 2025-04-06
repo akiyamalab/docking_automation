@@ -1,19 +1,21 @@
-import pytest
-from pathlib import Path
 import os
-from docking_automation.molecule.protein import Protein
-from docking_automation.molecule.compound_set import CompoundSet
+from pathlib import Path
+
+import pytest
+
 from docking_automation.converters.molecule_converter import MoleculeConverter
+from docking_automation.molecule.compound_set import CompoundSet
+from docking_automation.molecule.protein import Protein
 
 
 class TestMoleculeConverter:
     """MoleculeConverterクラスのテスト"""
-    
+
     @pytest.fixture
     def converter(self):
         """テスト用のMoleculeConverterインスタンスを作成する"""
         return MoleculeConverter()
-    
+
     @pytest.fixture
     def sample_protein(self, tmp_path):
         """テスト用のProteinインスタンスを作成する"""
@@ -28,7 +30,7 @@ END
 """
         pdb_path.write_text(pdb_content)
         return Protein(path=pdb_path, id="test_protein")
-    
+
     @pytest.fixture
     def sample_compound_set(self, tmp_path):
         """テスト用のCompoundSetインスタンスを作成する"""
@@ -61,39 +63,39 @@ $$$$
 """
         sdf_path.write_text(sdf_content)
         return CompoundSet(path=sdf_path, id="test_compounds")
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_protein_to_openbabel(self, converter, sample_protein):
         """Protein→OpenBabel変換のテスト"""
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_openbabel_to_protein(self, converter, tmp_path):
         """OpenBabel→Protein変換のテスト"""
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_compound_to_rdkit(self, converter, sample_compound_set):
         """CompoundSet→RDKit変換のテスト"""
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_rdkit_to_compound(self, converter, tmp_path):
         """RDKit→CompoundSet変換のテスト"""
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_protein_to_pdbqt(self, converter, sample_protein, tmp_path):
         """Protein→PDBQT変換のテスト"""
         output_path = tmp_path / "protein.pdbqt"
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_compound_to_pdbqt(self, converter, sample_compound_set, tmp_path):
         """CompoundSet→PDBQT変換のテスト"""
         output_path = tmp_path / "compounds.pdbqt"
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_pdbqt_to_sdf(self, converter, tmp_path):
         """PDBQT→SDF変換のテスト"""
@@ -112,7 +114,7 @@ TORSDOF 0
         pdbqt_path.write_text(pdbqt_content)
         output_path = tmp_path / "output.sdf"
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_pdbqt_to_rdkit(self, converter, tmp_path):
         """PDBQT→RDKit変換のテスト"""

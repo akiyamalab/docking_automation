@@ -1,18 +1,26 @@
-import pytest
-from pathlib import Path
 import os
-from docking_automation.molecule.protein import Protein
-from docking_automation.molecule.compound_set import CompoundSet
+from pathlib import Path
+
+import pytest
+
 from docking_automation.converters.molecule_converter import MoleculeConverter
+from docking_automation.docking.autodockvina_docking import (
+    AutoDockVina,
+    AutoDockVinaParameters,
+)
+from docking_automation.docking.docking_parameters import (
+    CommonDockingParameters,
+    DockingParameters,
+)
 from docking_automation.docking.grid_box import GridBox
-from docking_automation.docking.docking_parameters import DockingParameters, CommonDockingParameters
-from docking_automation.docking.autodockvina_docking import AutoDockVina, AutoDockVinaParameters
 from docking_automation.infrastructure.executor import DaskExecutor
+from docking_automation.molecule.compound_set import CompoundSet
+from docking_automation.molecule.protein import Protein
 
 
 class TestDockingWorkflow:
     """ドッキングワークフローの統合テスト"""
-    
+
     @pytest.fixture
     def setup_docking(self, tmp_path):
         """テスト用のデータセットアップ"""
@@ -21,7 +29,7 @@ class TestDockingWorkflow:
         output_dir = tmp_path / "output"
         data_dir.mkdir()
         output_dir.mkdir()
-        
+
         # テスト用のPDBファイルを作成
         pdb_path = data_dir / "test_protein.pdb"
         pdb_content = """ATOM      1  N   ALA A   1      10.000  10.000  10.000  1.00  0.00           N
@@ -33,7 +41,7 @@ TER       6      ALA A   1
 END
 """
         pdb_path.write_text(pdb_content)
-        
+
         # テスト用のSDFファイルを作成
         sdf_path = data_dir / "test_compounds.sdf"
         sdf_content = """
@@ -63,22 +71,15 @@ M  END
 $$$$
 """
         sdf_path.write_text(sdf_content)
-        
+
         # オブジェクトの作成
         protein = Protein(path=pdb_path, id="test_protein")
         compound_set = CompoundSet(path=sdf_path, id="test_compounds")
         converter = MoleculeConverter()
-        grid_box = GridBox(
-            center_x=11.0,
-            center_y=10.5,
-            center_z=10.0,
-            size_x=20.0,
-            size_y=20.0,
-            size_z=20.0
-        )
+        grid_box = GridBox(center_x=11.0, center_y=10.5, center_z=10.0, size_x=20.0, size_y=20.0, size_z=20.0)
         docking_tool = AutoDockVina()
         executor = DaskExecutor()
-        
+
         return {
             "protein": protein,
             "compound_set": compound_set,
@@ -87,9 +88,9 @@ $$$$
             "docking_tool": docking_tool,
             "executor": executor,
             "data_dir": data_dir,
-            "output_dir": output_dir
+            "output_dir": output_dir,
         }
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_end_to_end_docking(self, setup_docking):
         """エンドツーエンドのドッキングプロセスのテスト"""
@@ -100,30 +101,25 @@ $$$$
         grid_box = setup_docking["grid_box"]
         docking_tool = setup_docking["docking_tool"]
         output_dir = setup_docking["output_dir"]
-        
+
         # 前処理
         preprocessed_protein = docking_tool._preprocess_protein(protein)
         preprocessed_compound_set = docking_tool._preprocess_compound_set(compound_set)
-        
+
         # ドッキングパラメータの設定
         common_params = CommonDockingParameters(
-            protein=preprocessed_protein,
-            compound_set=preprocessed_compound_set,
-            grid_box=grid_box
+            protein=preprocessed_protein, compound_set=preprocessed_compound_set, grid_box=grid_box
         )
-        
+
         specific_params = AutoDockVinaParameters()
-        
-        docking_params = DockingParameters(
-            common=common_params,
-            specific=specific_params
-        )
-        
+
+        docking_params = DockingParameters(common=common_params, specific=specific_params)
+
         # ドッキング実行
         result = docking_tool.dock(docking_params)
-        
+
         pass
-    
+
     @pytest.mark.skip(reason="未実装のテスト")
     def test_multiple_compounds_docking(self, setup_docking):
         """複数化合物のドッキングテスト"""
@@ -135,5 +131,5 @@ $$$$
         docking_tool = setup_docking["docking_tool"]
         executor = setup_docking["executor"]
         output_dir = setup_docking["output_dir"]
-        
+
         pass

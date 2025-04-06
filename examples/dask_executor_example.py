@@ -16,7 +16,7 @@ from pathlib import Path
 os.environ["BABEL_QUIET"] = "1"
 
 # OpenBabelのインポート
-import openbabel.pybel as pybel
+import openbabel.pybel as pybel  # type: ignore[import-untyped]
 
 from docking_automation.docking import (
     AutoDockVina,
