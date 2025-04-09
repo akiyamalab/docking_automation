@@ -14,6 +14,9 @@ from docking_automation.infrastructure.repositories.docking_result_repository im
 from docking_automation.infrastructure.repositories.file_docking_result_repository import (
     FileDockingResultRepository,
 )
+from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import (
+    HDF5DockingResultRepository,
+)
 from docking_automation.infrastructure.repositories.hybrid_docking_result_repository import (
     HybridDockingResultRepository,
 )
@@ -30,6 +33,7 @@ class RepositoryType(Enum):
     FILE = auto()
     SQLITE = auto()
     HYBRID = auto()
+    HDF5 = auto()
 
 
 class DockingResultRepositoryFactory:
@@ -83,6 +87,11 @@ class DockingResultRepositoryFactory:
                 database_path=database_path,
                 files_directory=files_directory,
             )
+        elif repository_type == RepositoryType.HDF5:
+            hdf5_file_path = base_directory / "docking_results.hdf5"
+            # ディレクトリが存在しない場合は作成
+            hdf5_file_path.parent.mkdir(parents=True, exist_ok=True)
+            return HDF5DockingResultRepository(hdf5_file_path=hdf5_file_path)
         else:
             raise ValueError(f"未対応のリポジトリ種類です: {repository_type}")
 

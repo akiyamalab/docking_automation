@@ -24,6 +24,8 @@ setup(
         "biopandas",
         "networkx",
         "pcmap",
+        "h5py",  # HDF5ファイルの操作用
+        "filelock",  # ファイルロック用
     ],
     extras_require={
         "dev": [

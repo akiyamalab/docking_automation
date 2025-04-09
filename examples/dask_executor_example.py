@@ -181,26 +181,29 @@ def run_docking_with_persistence(
             elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], np.ndarray):
                 result.metadata[key] = [arr.tolist() for arr in value]
 
-    # リポジトリを作成
+    # リポジトリを作成 (HDF5に変更)
     repository = DockingResultRepositoryFactory.create(
-        repository_type=RepositoryType.FILE,
+        repository_type=RepositoryType.HDF5,  # HDF5に変更
         base_directory=repository_dir,
     )
 
     # 結果を保存（バージョンの競合エラーを無視）
-    try:
-        repository.save_collection(results)
-    except ValueError as e:
-        if "バージョンの競合" in str(e):
-            # バージョンの競合エラーを無視
-            # より詳細な情報を表示
-            for result in results:
-                print(
-                    f"警告: {e} - データ情報: タンパク質ID={result.protein_id}, 化合物セットID={result.compound_set_id}, 化合物インデックス={result.compound_index}"
-                )
-        else:
-            # その他のエラーは再発生
-            raise
+    # 結果を個別に保存 (save_collection は HDF5リポジトリにないため)
+    for result in results:
+        try:
+            repository.save(result)
+        except Exception as e:
+            # HDF5リポジトリではバージョンの競合は発生しない想定だが、
+            # 他のエラーが発生する可能性はあるためログ出力
+            print(
+                f"警告: 結果の保存中にエラーが発生しました - "
+                f"タンパク質ID={result.protein_id}, "
+                f"化合物セットID={result.compound_set_id}, "
+                f"化合物インデックス={result.compound_index}, "
+                f"エラー: {e}"
+            )
+            # 必要に応じてエラーを再送出するかどうか検討
+            # raise e
 
     return results
 
@@ -339,11 +342,6 @@ def run_parallel_docking():
 
         # タンパク質・セグメントごとの結果をSDFファイルにエクスポート
         try:
-            # リポジトリを作成
-            repository = DockingResultRepositoryFactory.create(
-                repository_type=RepositoryType.FILE,
-                base_directory=repository_dir,
-            )
 
             # SDFファイルにエクスポート
             protein_segment_id = f"{protein_name}_segment_{segment_index + 1}"
