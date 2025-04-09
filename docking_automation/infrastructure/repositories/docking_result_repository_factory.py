@@ -17,12 +17,6 @@ from docking_automation.infrastructure.repositories.file_docking_result_reposito
 from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import (
     HDF5DockingResultRepository,
 )
-from docking_automation.infrastructure.repositories.hybrid_docking_result_repository import (
-    HybridDockingResultRepository,
-)
-from docking_automation.infrastructure.repositories.sqlite_docking_result_repository import (
-    SQLiteDockingResultRepository,
-)
 
 
 class RepositoryType(Enum):
@@ -31,8 +25,6 @@ class RepositoryType(Enum):
     """
 
     FILE = auto()
-    SQLITE = auto()
-    HYBRID = auto()
     HDF5 = auto()
 
 
@@ -71,22 +63,6 @@ class DockingResultRepositoryFactory:
 
         if repository_type == RepositoryType.FILE:
             return FileDockingResultRepository.create(base_directory=base_directory)
-        elif repository_type == RepositoryType.SQLITE:
-            database_path = base_directory / "docking_results.db"
-            files_directory = base_directory / "files"
-            return SQLiteDockingResultRepository.create(
-                database_path=database_path,
-                files_directory=files_directory,
-            )
-        elif repository_type == RepositoryType.HYBRID:
-            database_path = base_directory / "docking_results.db"
-            files_directory = base_directory / "files"
-            # データベースディレクトリを作成
-            database_path.parent.mkdir(parents=True, exist_ok=True)
-            return HybridDockingResultRepository(
-                database_path=database_path,
-                files_directory=files_directory,
-            )
         elif repository_type == RepositoryType.HDF5:
             hdf5_file_path = base_directory / "docking_results.hdf5"
             # ディレクトリが存在しない場合は作成
@@ -103,4 +79,5 @@ class DockingResultRepositoryFactory:
         Returns:
             作成されたドッキング結果リポジトリ
         """
-        return DockingResultRepositoryFactory.create(RepositoryType.HYBRID)
+        # デフォルトをHDF5に変更
+        return DockingResultRepositoryFactory.create(RepositoryType.HDF5)
