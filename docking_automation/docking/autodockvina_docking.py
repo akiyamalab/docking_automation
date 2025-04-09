@@ -130,7 +130,7 @@ class AutoDockVina(DockingToolABC):
 
         # 前処理済みのタンパク質と化合物セット
         protein = common_params.protein
-        compound_set = common_params.compound_set
+        compound_set: CompoundSet = common_params.compound_set
         grid_box = common_params.grid_box
 
         # ファイルパスを取得
@@ -151,6 +151,20 @@ class AutoDockVina(DockingToolABC):
 
         # 処理する化合物の最大数を取得
         max_compounds = specific_params.params.get("max_compounds")
+
+        # インデックス範囲の初期化
+        start_index = 0
+
+        # CompoundSetのプロパティを取得して、インデックス範囲が設定されているかどうかを確認
+        # PreprocessedCompoundSetの場合はget_propertiesメソッドがないため、スキップ
+
+        try:
+            properties = compound_set.get_properties()
+            index_range = properties.get("index_range")
+            if index_range is not None:
+                start_index = index_range["start"]
+        except Exception as e:
+            print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
 
         # 化合物の数を取得（各タスクで処理する化合物数）
         task_compounds = len(compound_set.file_paths)
@@ -214,10 +228,10 @@ class AutoDockVina(DockingToolABC):
 
                 # DockingResultオブジェクトを作成
                 result = DockingResult(
-                    result_path=output_pdbqt,
+                    result_path=output_sdf,  # SDFファイルのパスを設定
                     protein_id=protein.file_paths[0].stem,  # タンパク質は1つのみ
                     compound_set_id=compound_path.stem.split("_")[0],  # 化合物セットID（ファイル名から抽出）
-                    compound_index=idx,  # 実際の化合物インデックス
+                    compound_index=start_index + idx,  # 実際の化合物インデックス（インデックス範囲を考慮）
                     docking_score=scores[0, 0],
                     metadata=metadata,
                 )

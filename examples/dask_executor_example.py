@@ -9,14 +9,13 @@ Alphafoldで作成されたタンパク質構造をセグメンテーション�
 """
 
 import os
-import tempfile
 from pathlib import Path
+
+import numpy as np
 
 # OpenBabelのwarningを完全に抑制するための設定
 os.environ["BABEL_QUIET"] = "1"
 
-# OpenBabelのインポート
-import openbabel.pybel as pybel  # type: ignore[import-untyped]
 
 from docking_automation.docking import (
     AutoDockVina,
@@ -28,6 +27,10 @@ from docking_automation.domain.services.protein_segmentation_service import (
     ProteinSegmentationService,
 )
 from docking_automation.infrastructure.executor import DaskExecutor, Task, TaskManager
+from docking_automation.infrastructure.repositories.docking_result_repository_factory import (
+    DockingResultRepositoryFactory,
+    RepositoryType,
+)
 from docking_automation.molecule import CompoundSet, Protein
 
 # 各種ファイルのパスをハードコーディング
@@ -38,29 +41,11 @@ alphafold_protein_paths = [
 ]
 compound_path = script_dir / "input" / "ALDR" / "actives_subset.sdf"
 output_dir = script_dir / "output" / "alphafold_segmentation"
+repository_dir = output_dir / "repository"  # リポジトリディレクトリを追加
 
-
-def _convert_mol2_to_sdf(mol2_path: Path) -> Path:
-    """
-    mol2ファイルをsdfファイルに変換する
-
-    Args:
-        mol2_path: mol2ファイルのパス
-
-    Returns:
-        変換後のsdfファイルのパス
-    """
-    # 一時ファイルを作成
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".sdf") as temp_file:
-        temp_path = Path(temp_file.name)
-
-    # mol2ファイルを読み込む
-    mol = next(pybel.readfile("mol2", str(mol2_path)))
-
-    # sdfファイルとして保存（overwrite=Trueを指定）
-    mol.write("sdf", str(temp_path), overwrite=True)
-
-    return temp_path
+# 出力ディレクトリとリポジトリディレクトリの作成
+os.makedirs(output_dir, exist_ok=True)
+os.makedirs(repository_dir, exist_ok=True)
 
 
 def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
@@ -104,6 +89,77 @@ def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
         print(f"セグメント {i}: ID={seg_protein.id}, パス={seg_protein.path}")
 
     return segmented_proteins
+
+
+def run_docking_with_persistence(protein, compound_set, grid_box, additional_params, repository_dir):
+    """
+    ドッキング計算を実行し、結果を永続化する。
+
+    Args:
+        protein: タンパク質
+        compound_set: 化合物セット
+        grid_box: グリッドボックス
+        additional_params: 追加パラメータ
+        repository_dir: リポジトリディレクトリ
+
+    Returns:
+        ドッキング結果のコレクション
+    """
+    # CompoundSetのインデックス範囲を取得
+    start_index = 0
+    if hasattr(compound_set, "get_properties"):
+        try:
+            properties = compound_set.get_properties()
+            index_range = properties.get("index_range")
+            if index_range is not None:
+                start_index = index_range["start"]
+        except Exception as e:
+            print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
+
+    # ドッキング計算を実行
+    docking_tool = AutoDockVina()
+    results = docking_tool.run_docking(
+        protein=protein,
+        compound_set=compound_set,
+        grid_box=grid_box,
+        additional_params=additional_params,
+    )
+
+    # compound_indexを修正
+    for i, result in enumerate(results):
+        # DockingResultクラスのcompound_indexフィールドを直接修正
+        result.compound_index = start_index + i
+
+    # NumPy配列をリストに変換
+    for result in results:
+        for key, value in result.metadata.items():
+            if isinstance(value, np.ndarray):
+                result.metadata[key] = value.tolist()
+            elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], np.ndarray):
+                result.metadata[key] = [arr.tolist() for arr in value]
+
+    # リポジトリを作成
+    repository = DockingResultRepositoryFactory.create(
+        repository_type=RepositoryType.FILE,
+        base_directory=repository_dir,
+    )
+
+    # 結果を保存（バージョンの競合エラーを無視）
+    try:
+        repository.save_collection(results)
+    except ValueError as e:
+        if "バージョンの競合" in str(e):
+            # バージョンの競合エラーを無視
+            # より詳細な情報を表示
+            for result in results:
+                print(
+                    f"警告: {e} - データ情報: タンパク質ID={result.protein_id}, 化合物セットID={result.compound_set_id}, 化合物インデックス={result.compound_index}"
+                )
+        else:
+            # その他のエラーは再発生
+            raise
+
+    return results
 
 
 def run_parallel_docking():
@@ -150,7 +206,6 @@ def run_parallel_docking():
     compound_sets = compound_set.split_by_chunks(chunk_size)
 
     # ドッキング計算タスクの作成
-    docking_tool = AutoDockVina()
     docking_tasks: list[Task] = []
 
     # 各セグメントに対してドッキング範囲の推定とドッキングタスクの作成
@@ -172,12 +227,13 @@ def run_parallel_docking():
         for j, split_compound_set in enumerate(compound_sets):
             # 各分割された化合物セットに対してタスクを作成
             task = Task.create(
-                function=docking_tool.run_docking,
+                function=run_docking_with_persistence,
                 args={
                     "protein": protein,
                     "compound_set": split_compound_set,
                     "grid_box": grid_box,
                     "additional_params": AutoDockVinaParameters(),
+                    "repository_dir": repository_dir,
                 },
                 id=f"docking_task_protein_{protein_name}_segment_{i}_chunk_{j}",
             )
@@ -281,6 +337,11 @@ def run_parallel_docking():
                 f"     ドッキング範囲: 中心=({grid_box.center[0]:.3f}, {grid_box.center[1]:.3f}, {grid_box.center[2]:.3f}), "
                 f"サイズ=({grid_box.size[0]:.3f}, {grid_box.size[1]:.3f}, {grid_box.size[2]:.3f})"
             )
+
+    # 永続化された結果の確認メッセージを表示
+    print("\n=== 永続化されたドッキング結果 ===")
+    print(f"リポジトリディレクトリ: {repository_dir}")
+    print(f"永続化された結果は後で検索・利用できます。")
 
     return results
 

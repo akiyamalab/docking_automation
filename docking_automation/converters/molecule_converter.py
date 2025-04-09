@@ -22,6 +22,7 @@ ob.obErrorLog.SetOutputLevel(ob.obError)
 from meeko import (  # type: ignore[import-untyped]
     MoleculePreparation,
     PDBQTMolecule,
+    PDBQTWriterLegacy,
     RDKitMolCreate,
 )
 
@@ -251,8 +252,17 @@ class MoleculeConverter:
 
         # meekoを使用してPDBQTに変換
         preparator = MoleculePreparation()
-        preparator.prepare(mol_with_h)
-        pdbqt_string = preparator.write_pdbqt_string()
+        # prepare()メソッドの戻り値を使用
+        molecule_setups = preparator.prepare(mol_with_h)
+
+        # molecule_setupsが空でないことを確認
+        if not molecule_setups:
+            raise ValueError("Meekoによる分子の準備に失敗しました。")
+
+        # 最初のMoleculeSetupインスタンスを使用してPDBQTを生成
+        pdbqt_string, is_ok, err_msg = PDBQTWriterLegacy.write_string(molecule_setups[0])
+        if not is_ok:
+            raise ValueError(f"PDBQTの生成に失敗しました: {err_msg}")
 
         # PDBQTファイルに保存
         with open(output_path, "w") as f:
