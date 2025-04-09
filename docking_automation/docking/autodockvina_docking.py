@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -130,7 +130,7 @@ class AutoDockVina(DockingToolABC):
 
         # 前処理済みのタンパク質と化合物セット
         protein = common_params.protein
-        compound_set: CompoundSet = common_params.compound_set
+        compound_set: Union[CompoundSet, PreprocessedCompoundSet] = common_params.compound_set
         grid_box = common_params.grid_box
 
         # ファイルパスを取得
@@ -158,13 +158,16 @@ class AutoDockVina(DockingToolABC):
         # CompoundSetのプロパティを取得して、インデックス範囲が設定されているかどうかを確認
         # PreprocessedCompoundSetの場合はget_propertiesメソッドがないため、スキップ
 
-        try:
-            properties = compound_set.get_properties()
-            index_range = properties.get("index_range")
-            if index_range is not None:
-                start_index = index_range["start"]
-        except Exception as e:
-            print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
+        # CompoundSetのプロパティを取得して、インデックス範囲が設定されているかどうかを確認
+        # PreprocessedCompoundSetの場合はget_propertiesメソッドがないため、hasattrでチェック
+        if hasattr(compound_set, "get_properties"):
+            try:
+                properties = compound_set.get_properties()
+                index_range = properties.get("index_range")
+                if index_range is not None:
+                    start_index = index_range["start"]
+            except Exception as e:
+                print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
 
         # 化合物の数を取得（各タスクで処理する化合物数）
         task_compounds = len(compound_set.file_paths)

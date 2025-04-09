@@ -144,12 +144,67 @@ class DockingResultCollection:
         """
         結果をSDFファイルにエクスポートする。
 
+        各ドッキング結果の3D構造情報とメタデータ（タンパク質ID、化合物ID、ドッキングスコアなど）を
+        含むSDFファイルを生成する。結果はドッキングスコアの昇順でソートされる。
+
         Args:
             output_path: 出力ファイルのパス
         """
-        # 実際のSDFエクスポート処理はRDKitなどの外部ライブラリに依存するため、
-        # ここではインターフェースのみを定義
-        raise NotImplementedError("SDFエクスポート機能を実装する必要があります")
+        # 出力ディレクトリが存在しない場合は作成
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # RDKitのSDWriterを使用してSDFファイルを作成
+        from rdkit import Chem
+
+        from docking_automation.converters.molecule_converter import MoleculeConverter
+
+        # 空のコレクションの場合でも空のSDFファイルを作成する
+        with open(output_path, "w") as f:
+            # SDFファイルのヘッダーを書き込む（空のファイルでも有効なSDFファイルとなる）
+            f.write("$$$$\n")
+
+        # 結果がある場合のみSDWriterを使用
+        if len(self._results) > 0:
+            # 処理した結果の数をカウント
+            processed_count = 0
+            success_count = 0
+
+            with Chem.SDWriter(str(output_path)) as writer:
+                # コレクション内の各ドッキング結果を処理
+                for result in self._results:
+                    processed_count += 1
+                    try:
+                        # 分子コンバーターを使用して3D構造情報を読み込む
+                        converter = MoleculeConverter()
+                        mols = converter.pdbqt_to_rdkit(result.result_path)
+
+                        if not mols:
+                            continue
+
+                        # 各分子にメタデータを追加して書き込む
+                        for mol in mols:
+                            # メタデータを追加
+                            mol.SetProp("protein_id", result.protein_id)
+                            mol.SetProp("compound_set_id", result.compound_set_id)
+                            mol.SetProp("compound_index", str(result.compound_index))
+                            mol.SetProp("docking_score", str(result.docking_score))
+
+                            # 追加のメタデータを設定
+                            for key, value in result.metadata.items():
+                                if isinstance(value, (str, int, float, bool)):
+                                    mol.SetProp(key, str(value))
+
+                            # SDFファイルに書き込む
+                            writer.write(mol)
+                            success_count += 1
+                    except Exception as e:
+                        print(f"警告: 結果 {result.id} の処理中にエラーが発生しました: {e}")
+                        continue
+
+            # 処理結果の概要を表示
+            print(f"SDFエクスポート完了: {success_count}/{processed_count} 件の結果を処理しました。")
+        else:
+            print("警告: エクスポートする結果がありませんでした。")
 
     @classmethod
     def from_results(cls, results: List[DockingResult]) -> "DockingResultCollection":

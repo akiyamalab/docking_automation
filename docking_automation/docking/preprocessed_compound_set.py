@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 
 # 値オブジェクト
@@ -22,3 +22,22 @@ class PreprocessedCompoundSet:
         """
         self.file_paths = file_paths or []  # 複数の化合物のファイルパス
         self.data = data
+
+    def get_properties(self) -> Dict[str, Any]:
+        """
+        前処理済み化合物セットのプロパティを取得する。
+
+        Returns:
+            プロパティの辞書
+        """
+        # 基本的なプロパティを返す
+        properties = {
+            "file_paths": [str(path) for path in self.file_paths],
+            "file_count": len(self.file_paths),
+        }
+
+        # データがある場合は、その情報も含める
+        if self.data is not None:
+            properties["has_data"] = True
+
+        return properties

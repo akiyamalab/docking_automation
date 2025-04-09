@@ -424,9 +424,10 @@ class MoleculeConverter:
     def pdbqt_to_rdkit(self, pdbqt_path: Path) -> List[Chem.Mol]:
         """
         pdbqtファイルからRDKitの分子オブジェクトのリストに変換する。
+        ファイル拡張子に基づいて、PDBQTファイルまたはSDFファイルとして処理する。
 
         Args:
-            pdbqt_path: 変換対象のpdbqtファイルのパス
+            pdbqt_path: 変換対象のファイルのパス（PDBQTまたはSDF）
 
         Returns:
             RDKitの分子オブジェクトのリスト
@@ -435,9 +436,53 @@ class MoleculeConverter:
             1つのpdbqtファイルには、同じ分子構造の異なるconformerが含まれることがある。
             そのため、出力は list[Chem.Mol] となる。
         """
+        import os
 
-        with open(pdbqt_path, "r") as f:
-            pdbqt_string = f.read()
-        pdbqt_mol = PDBQTMolecule(pdbqt_string)
-        rdkit_mol_list = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
-        return rdkit_mol_list
+        from rdkit import Chem
+
+        # ファイルの存在を確認
+        if not os.path.exists(pdbqt_path):
+            print(f"警告: ファイル {pdbqt_path} が存在しません。")
+            return []
+
+        # ファイルサイズを確認
+        if os.path.getsize(pdbqt_path) == 0:
+            print(f"警告: ファイル {pdbqt_path} が空です。")
+            return []
+
+        # ファイル拡張子を取得
+        file_ext = pdbqt_path.suffix.lower()
+
+        try:
+            # SDFファイルの場合
+            if file_ext == ".sdf":
+                # SDFファイルを読み込む
+                suppl = Chem.SDMolSupplier(str(pdbqt_path))
+                mols = [mol for mol in suppl if mol is not None]
+
+                if not mols:
+                    print(f"警告: SDFファイル {pdbqt_path} から分子を読み込めませんでした。")
+                    return []
+
+                return mols
+
+            # PDBQTファイルの場合
+            elif file_ext == ".pdbqt":
+                # PDBQTMolecule.from_fileメソッドを使用
+                pdbqt_mol = PDBQTMolecule.from_file(str(pdbqt_path))
+                rdkit_mol_list = RDKitMolCreate.from_pdbqt_mol(pdbqt_mol)
+
+                if not rdkit_mol_list:
+                    print(f"警告: PDBQTファイル {pdbqt_path} から分子を読み込めませんでした。")
+                    return []
+
+                return rdkit_mol_list
+
+            # その他の拡張子の場合
+            else:
+                print(f"警告: サポートされていないファイル形式です: {file_ext}")
+                return []
+
+        except Exception as e:
+            print(f"警告: ファイル {pdbqt_path} の処理中にエラーが発生しました: {e}")
+            return []

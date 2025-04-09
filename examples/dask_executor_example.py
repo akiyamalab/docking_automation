@@ -9,7 +9,9 @@ Alphafoldで作成されたタンパク質構造をセグメンテーション�
 """
 
 import os
+import shutil
 from pathlib import Path
+from typing import Any, Union
 
 import numpy as np
 
@@ -42,10 +44,14 @@ alphafold_protein_paths = [
 compound_path = script_dir / "input" / "ALDR" / "actives_subset.sdf"
 output_dir = script_dir / "output" / "alphafold_segmentation"
 repository_dir = output_dir / "repository"  # リポジトリディレクトリを追加
+sdf_output_dir = output_dir / "sdf_exports"  # SDFエクスポート用ディレクトリを追加
+protein_output_dir = sdf_output_dir / "proteins"  # タンパク質構造ファイル用ディレクトリを追加
 
 # 出力ディレクトリとリポジトリディレクトリの作成
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(repository_dir, exist_ok=True)
+os.makedirs(sdf_output_dir, exist_ok=True)
+os.makedirs(protein_output_dir, exist_ok=True)
 
 
 def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
@@ -91,7 +97,44 @@ def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
     return segmented_proteins
 
 
-def run_docking_with_persistence(protein, compound_set, grid_box, additional_params, repository_dir):
+def copy_protein_structure(protein: "Protein", output_dir: Path, name_prefix: str = "") -> Path:
+    """
+    タンパク質構造ファイルを指定されたディレクトリにコピーする。
+
+    Args:
+        protein: コピーするタンパク質
+        output_dir: 出力先ディレクトリ
+        name_prefix: ファイル名の接頭辞（オプション）
+
+    Returns:
+        コピー先のファイルパス
+    """
+    # 出力ディレクトリが存在しない場合は作成
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 出力ファイル名を生成
+    if name_prefix:
+        output_filename = f"{name_prefix}_{protein.path.name}"
+    else:
+        output_filename = protein.path.name
+
+    # 出力先のパスを生成
+    output_path = output_dir / output_filename
+
+    # ファイルをコピー
+    shutil.copy2(protein.path, output_path)
+    print(f"タンパク質構造ファイルをコピーしました: {output_path}")
+
+    return output_path
+
+
+def run_docking_with_persistence(
+    protein: "Protein",
+    compound_set: Union["CompoundSet", "PreprocessedCompoundSet"],
+    grid_box: "GridBox",
+    additional_params: Any,
+    repository_dir: Path,
+) -> "DockingResultCollection":
     """
     ドッキング計算を実行し、結果を永続化する。
 
@@ -203,7 +246,7 @@ def run_parallel_docking():
     # 化合物セットの読み込みと分割
     chunk_size = 1  # チャンク分割の差異の、チャンクあたりの化合物数
     compound_set = CompoundSet(compound_path)
-    compound_sets = compound_set.split_by_chunks(chunk_size)
+    compound_sets: list[CompoundSet] = compound_set.split_by_chunks(chunk_size)
 
     # ドッキング計算タスクの作成
     docking_tasks: list[Task] = []
@@ -294,6 +337,34 @@ def run_parallel_docking():
             scores = hit.metadata["scores"]
             print(f"    全ポーズのスコア: {[float(s) for s in scores[0]]}")
 
+        # タンパク質・セグメントごとの結果をSDFファイルにエクスポート
+        try:
+            # リポジトリを作成
+            repository = DockingResultRepositoryFactory.create(
+                repository_type=RepositoryType.FILE,
+                base_directory=repository_dir,
+            )
+
+            # SDFファイルにエクスポート
+            protein_segment_id = f"{protein_name}_segment_{segment_index + 1}"
+            sdf_path = sdf_output_dir / f"{protein_segment_id}_docking_results.sdf"
+
+            # DockingResultCollectionのexport_to_sdfメソッドを直接呼び出す
+            data["results"].export_to_sdf(sdf_path)
+            print(f"  ドッキング結果をSDFファイルにエクスポートしました: {sdf_path}")
+
+            # タンパク質構造ファイルをコピー
+            try:
+                protein = data["protein"]
+                protein_copy_path = copy_protein_structure(
+                    protein=protein, output_dir=sdf_output_dir / "proteins", name_prefix=protein_segment_id
+                )
+                print(f"  タンパク質構造ファイルをコピーしました: {protein_copy_path}")
+            except Exception as e:
+                print(f"  タンパク質構造ファイルのコピー中にエラーが発生しました: {e}")
+        except Exception as e:
+            print(f"  SDFファイルへのエクスポート中にエラーが発生しました: {e}")
+
     # 統合された結果からトップヒットも表示
     combined_results = DockingResultCollection()
     for data in protein_segment_results.values():
@@ -342,6 +413,15 @@ def run_parallel_docking():
     print("\n=== 永続化されたドッキング結果 ===")
     print(f"リポジトリディレクトリ: {repository_dir}")
     print(f"永続化された結果は後で検索・利用できます。")
+
+    # 統合されたSDFファイルやタンパク質ごとのSDFファイルは出力せず、
+    # セグメントごとの結果のみを出力します（上記のループ内で既に出力済み）
+    print("\nセグメントごとのドッキング結果のみをSDFファイルにエクスポートしました。")
+    try:
+        # 何もしない（セグメントごとの結果は既に出力済み）
+        pass
+    except Exception as e:
+        print(f"\nSDFファイルへのエクスポート中にエラーが発生しました: {e}")
 
     return results
 

@@ -5,6 +5,7 @@ Daskを使った並列処理Executorモジュール。
 ローカル環境とクラスタ環境（Slurm、PBS等）の両方に対応しています。
 """
 
+import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -153,7 +154,8 @@ class DaskExecutor(ExecutorABC):
                     task.status = TaskStatus.FAILED
             raise
         finally:
-            # クライアントを閉じる
+            # クライアントを閉じる前に少し待機（ワーカーのハートビート通信が完了するのを待つ）
+            time.sleep(1)
             client.close()
 
     def execute_async(self, task: Task) -> str:
