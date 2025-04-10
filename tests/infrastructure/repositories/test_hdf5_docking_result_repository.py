@@ -14,9 +14,16 @@ from docking_automation.infrastructure.repositories.hdf5_docking_result_reposito
 
 @pytest.fixture
 def hdf5_repo(tmp_path: Path) -> HDF5DockingResultRepository:
-    """一時的なHDF5ファイルを使用するリポジトリのfixture。"""
+    """一時的なHDF5ファイルを使用するリポジトリのfixture（上書きモード）。"""
     hdf5_file = tmp_path / "test_results.hdf5"
-    return HDF5DockingResultRepository(hdf5_file_path=hdf5_file)
+    return HDF5DockingResultRepository(hdf5_file_path=hdf5_file, mode="overwrite")
+
+
+@pytest.fixture
+def hdf5_repo_append(tmp_path: Path) -> HDF5DockingResultRepository:
+    """一時的なHDF5ファイルを使用するリポジトリのfixture（追記モード）。"""
+    hdf5_file = tmp_path / "test_results_append.hdf5"
+    return HDF5DockingResultRepository(hdf5_file_path=hdf5_file, mode="append")
 
 
 @pytest.fixture
@@ -247,20 +254,88 @@ class TestHDF5DockingResultRepository:
         assert "file_path" in details
         assert details["file_path"] == str(hdf5_repo.hdf5_file_path)
 
+    def test_init_with_invalid_mode(self, tmp_path: Path):
+        """無効なモードを指定した場合にValueErrorが発生することを確認する。"""
+        hdf5_file = tmp_path / "invalid_mode_test.hdf5"
+        with pytest.raises(ValueError) as excinfo:
+            HDF5DockingResultRepository(hdf5_file_path=hdf5_file, mode="invalid_mode")
+        assert 'モードは"overwrite"または"append"のいずれかを指定してください' in str(excinfo.value)
+
+    def test_append_mode_skips_existing(self, tmp_path: Path, sample_result1: DockingResult):
+        """追記モードで、既存のデータがある場合はスキップされることを確認する。"""
+        # 上書きモードでリポジトリを初期化して最初のデータを保存
+        overwrite_repo = HDF5DockingResultRepository(hdf5_file_path=tmp_path / "append_test.hdf5", mode="overwrite")
+        overwrite_repo.save(sample_result1)
+
+        # 同じファイルに対して追記モードでリポジトリを初期化
+        append_repo = HDF5DockingResultRepository(hdf5_file_path=tmp_path / "append_test.hdf5", mode="append")
+
+        # 更新用のDockingResultを作成
+        updated_result_path = tmp_path / "updated_proteinA_set1_0.sdf"
+        updated_result_path.touch()
+        updated_result = DockingResult.create(
+            result_path=updated_result_path,
+            protein_id=sample_result1.protein_id,
+            compound_set_id=sample_result1.compound_set_id,
+            compound_index=sample_result1.compound_index,
+            docking_score=-10.0,  # 異なるスコア
+            metadata={"pose_data": "updated pose data"},  # 異なるメタデータ
+        )
+
+        # 追記モードで保存を試みる
+        append_repo.save(updated_result)
+
+        # 元のデータが保持されていることを確認
+        loaded_result = append_repo.load(
+            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
+        )
+        assert loaded_result is not None
+        assert loaded_result.docking_score == sample_result1.docking_score  # 元のスコアが保持されている
+        assert loaded_result.get_metadata_value("pose_data") == sample_result1.get_metadata_value(
+            "pose_data"
+        )  # 元のメタデータが保持されている
+        assert loaded_result.result_path == sample_result1.result_path  # 元のパスが保持されている
+
+    def test_update_always_overwrites(self, tmp_path: Path, sample_result1: DockingResult):
+        """updateメソッドは常に上書きモードで動作することを確認する。"""
+        # 追記モードでリポジトリを初期化
+        append_repo = HDF5DockingResultRepository(hdf5_file_path=tmp_path / "update_test.hdf5", mode="append")
+        append_repo.save(sample_result1)
+
+        # 更新用のDockingResultを作成
+        updated_result_path = tmp_path / "updated_via_update_proteinA_set1_0.sdf"
+        updated_result_path.touch()
+        updated_result = DockingResult.create(
+            result_path=updated_result_path,
+            protein_id=sample_result1.protein_id,
+            compound_set_id=sample_result1.compound_set_id,
+            compound_index=sample_result1.compound_index,
+            docking_score=-11.0,  # 異なるスコア
+            metadata={"pose_data": "updated via update method"},  # 異なるメタデータ
+        )
+
+        # 追記モードのリポジトリでもupdateメソッドは上書きする
+        append_repo.update(updated_result)
+
+        # データが上書きされていることを確認
+        loaded_result = append_repo.load(
+            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
+        )
+        assert loaded_result is not None
+        assert loaded_result.docking_score == -11.0  # 更新されたスコア
+        assert loaded_result.get_metadata_value("pose_data") == "updated via update method"  # 更新されたメタデータ
+        assert loaded_result.result_path == updated_result_path  # 更新されたパス
+
 
 # --- 並行性テスト用ヘルパー関数 ---
 # クラスの外に定義
-def _save_task_func(repo_path: Path, result: DockingResult, delay: float = 0):
+def _save_task_func(repo_path: Path, result: DockingResult, delay: float = 0, mode: str = "overwrite"):
     """別プロセスで実行される保存タスク。"""
     time.sleep(delay)  # 他のプロセスがロックを取得するのを待つための遅延
-    repo = HDF5DockingResultRepository(repo_path)
+    repo = HDF5DockingResultRepository(repo_path, mode=mode)
     repo.save(result)
 
-
-class TestHDF5DockingResultRepository:
-    """HDF5DockingResultRepositoryのテストクラス。"""
-
-    # ... (他のテストメソッドは省略) ...
+    # 2つ目のクラス定義を削除（重複しているため）
 
     # --- 並行性テスト ---
     # 注意: このテストは基本的なロックの動作を確認するものであり、
@@ -269,7 +344,7 @@ class TestHDF5DockingResultRepository:
     def test_concurrent_save(self, tmp_path: Path, sample_result1: DockingResult, sample_result2: DockingResult):
         """複数のプロセスが同時に保存しようとしてもデータが壊れないことを確認する（基本的なロック確認）。"""
         hdf5_file = tmp_path / "concurrent_test.hdf5"
-        repo = HDF5DockingResultRepository(hdf5_file_path=hdf5_file)
+        repo = HDF5DockingResultRepository(hdf5_file_path=hdf5_file, mode="overwrite")
 
         # 異なる結果を別々のプロセスで保存
         # targetをクラス外の関数に変更

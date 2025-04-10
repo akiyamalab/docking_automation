@@ -20,23 +20,34 @@ class HDF5DockingResultRepository(DockingResultRepository):
     """HDF5ファイルを使用してドッキング結果を永続化するリポジトリ。
 
     ファイルロックを使用して、複数のプロセスからの同時書き込みを制御します。
+    上書きモードと追記モードをサポートしています。
 
     Attributes:
         hdf5_file_path (Path): HDF5ファイルのパス。
         lock_file_path (Path): ロックファイルのパス。
+        mode (str): 保存モード。"overwrite"（上書き）または"append"（追記）。
     """
 
-    def __init__(self, hdf5_file_path: str | Path):
+    def __init__(self, hdf5_file_path: str | Path, mode: str = "overwrite"):
         """リポジトリを初期化します。
 
         Args:
             hdf5_file_path (str | Path): HDF5ファイルのパス。
+            mode (str, optional): 保存モード。"overwrite"（上書き）または"append"（追記）。
+                デフォルトは"overwrite"。
         """
         self.hdf5_file_path = Path(hdf5_file_path)
         self.lock_file_path = self.hdf5_file_path.with_suffix(self.hdf5_file_path.suffix + ".lock")
+
+        # モードの検証と設定
+        if mode not in ["overwrite", "append"]:
+            raise ValueError('モードは"overwrite"または"append"のいずれかを指定してください')
+        self.mode = mode
+
         self._ensure_directory_exists()
         logger.info(
-            f"HDF5リポジトリを初期化しました。ファイル: {self.hdf5_file_path}, ロックファイル: {self.lock_file_path}"
+            f"HDF5リポジトリを初期化しました。ファイル: {self.hdf5_file_path}, "
+            f"ロックファイル: {self.lock_file_path}, モード: {self.mode}"
         )
 
     def _ensure_directory_exists(self):
@@ -44,11 +55,36 @@ class HDF5DockingResultRepository(DockingResultRepository):
         self.hdf5_file_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)  # 通常は同じディレクトリ
 
-    def save(self, docking_result: DockingResult) -> None:
-        """単一のドッキング結果をHDF5ファイルに保存します。
+    def _exists(self, protein_id: str, compound_set_id: str, compound_index: int) -> bool:
+        """指定されたキーのデータが既に存在するかどうかを確認します。
 
-        既存の結果がある場合は上書きされます。ファイルロックを使用して排他制御を行い、
-        ロック取得に失敗した場合はリトライします。
+        Args:
+            protein_id (str): タンパク質ID。
+            compound_set_id (str): 化合物セットID。
+            compound_index (int): 化合物インデックス。
+
+        Returns:
+            bool: データが存在する場合はTrue、存在しない場合はFalse。
+        """
+        if not self.hdf5_file_path.exists():
+            return False
+
+        try:
+            with h5py.File(self.hdf5_file_path, "r") as f:
+                group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
+                return group_path in f
+        except Exception as e:
+            logger.error(f"データの存在確認中にエラーが発生しました: {e}", exc_info=True)
+            return False
+
+    def save(self, docking_result: DockingResult) -> None:
+        """ドッキング結果をHDF5ファイルに保存します。
+
+        モードに応じて以下の動作をします：
+        - "overwrite"モード: 既存の結果がある場合は上書きします。
+        - "append"モード: 既存の結果がある場合はスキップします。
+
+        ファイルロックを使用して排他制御を行い、ロック取得に失敗した場合はリトライします。
 
         Args:
             docking_result (DockingResult): 保存するドッキング結果。
@@ -56,6 +92,16 @@ class HDF5DockingResultRepository(DockingResultRepository):
         lock = FileLock(self.lock_file_path)
         max_retries = 5  # 最大リトライ回数
         retry_delay = 1  # リトライ間隔（秒）
+
+        # 追記モードで、既にデータが存在する場合はスキップ
+        if self.mode == "append" and self._exists(
+            docking_result.protein_id, docking_result.compound_set_id, docking_result.compound_index
+        ):
+            logger.info(
+                f"追記モード: 既存のデータが存在するためスキップします: "
+                f"{docking_result.protein_id}/{docking_result.compound_set_id}/{docking_result.compound_index}"
+            )
+            return
 
         for attempt in range(max_retries):
             try:
@@ -65,6 +111,11 @@ class HDF5DockingResultRepository(DockingResultRepository):
                     with h5py.File(self.hdf5_file_path, "a") as f:
                         # グループパス: /results/{protein_id}/{compound_set_id}/{compound_index}
                         group_path = f"/results/{docking_result.protein_id}/{docking_result.compound_set_id}/{docking_result.compound_index}"
+
+                        # 上書きモードの場合、既存のグループを削除
+                        if self.mode == "overwrite" and group_path in f:
+                            del f[group_path]
+
                         group = f.require_group(group_path)
 
                         # 属性やデータセットとして情報を保存 (既存データの上書き)
@@ -95,7 +146,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
                             del group.attrs["version"]
                         group.attrs["version"] = docking_result.version
 
-                        logger.info(f"ドッキング結果を保存しました: {group_path}")
+                        logger.info(f"{self.mode}モード: ドッキング結果を保存しました: {group_path}")
                         return  # 保存成功したらループを抜ける
 
             except Timeout:  # filelock.Timeout 例外をキャッチ
@@ -295,16 +346,24 @@ class HDF5DockingResultRepository(DockingResultRepository):
     def update(self, docking_result: DockingResult) -> None:
         """既存のドッキング結果を更新します。
 
-        saveメソッドと同じ動作（上書き）になります。
+        このメソッドは常に上書きモードで動作します（モード設定に関わらず）。
 
         Args:
             docking_result (DockingResult): 更新するドッキング結果。
         """
-        # ログ出力のキーを修正
-        logger.debug(
-            f"updateメソッドが呼び出されました。saveメソッドを実行します: {docking_result.protein_id}/{docking_result.compound_set_id}/{docking_result.compound_index}"
-        )
-        self.save(docking_result)
+        # 現在のモードを一時的に保存
+        current_mode = self.mode
+        try:
+            # 強制的に上書きモードに設定
+            self.mode = "overwrite"
+            logger.debug(
+                f"updateメソッドが呼び出されました。強制的に上書きモードでsaveメソッドを実行します: "
+                f"{docking_result.protein_id}/{docking_result.compound_set_id}/{docking_result.compound_index}"
+            )
+            self.save(docking_result)
+        finally:
+            # 元のモードに戻す
+            self.mode = current_mode
 
     def get_repository_type(self) -> str:
         """リポジトリのタイプを返します。"""

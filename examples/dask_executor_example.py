@@ -185,6 +185,7 @@ def run_docking_with_persistence(
     repository = DockingResultRepositoryFactory.create(
         repository_type=RepositoryType.HDF5,  # HDF5に変更
         base_directory=repository_dir,
+        config={"mode": "append"},  # 追記モードに変更
     )
 
     # 結果を保存（バージョンの競合エラーを無視）

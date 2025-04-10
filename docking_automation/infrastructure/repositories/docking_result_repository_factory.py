@@ -67,17 +67,23 @@ class DockingResultRepositoryFactory:
             hdf5_file_path = base_directory / "docking_results.hdf5"
             # ディレクトリが存在しない場合は作成
             hdf5_file_path.parent.mkdir(parents=True, exist_ok=True)
-            return HDF5DockingResultRepository(hdf5_file_path=hdf5_file_path)
+            # configからモードを取得（デフォルトは"overwrite"）
+            mode = config.get("mode", "overwrite")
+            return HDF5DockingResultRepository(hdf5_file_path=hdf5_file_path, mode=mode)
         else:
             raise ValueError(f"未対応のリポジトリ種類です: {repository_type}")
 
     @staticmethod
-    def create_default() -> DockingResultRepositoryABC:
+    def create_default(mode: str = "overwrite") -> DockingResultRepositoryABC:
         """
         デフォルト設定でドッキング結果リポジトリを作成する。
+
+        Args:
+            mode (str, optional): HDF5リポジトリの保存モード。"overwrite"または"append"。
+                デフォルトは"overwrite"。
 
         Returns:
             作成されたドッキング結果リポジトリ
         """
         # デフォルトをHDF5に変更
-        return DockingResultRepositoryFactory.create(RepositoryType.HDF5)
+        return DockingResultRepositoryFactory.create(RepositoryType.HDF5, config={"mode": mode})
