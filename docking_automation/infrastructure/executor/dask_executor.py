@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from dask.distributed import Client, LocalCluster
+from dask.distributed import Client, LocalCluster, as_completed
 from dask_jobqueue.pbs import PBSCluster
 from dask_jobqueue.slurm import SLURMCluster
 from tqdm import tqdm
@@ -132,11 +132,14 @@ class DaskExecutor(ExecutorABC):
             print(f"結果を取得中...")
             # tqdmを使用して進捗バーを表示
             with tqdm(total=len(futures), desc="処理進捗", unit="タスク") as pbar:
-                results = []
-                for future in futures:
-                    # 1つのタスクの結果を取得
+                results = [None] * len(futures)  # 結果を格納するリスト（順序を保持）
+                future_to_idx = {f: i for i, f in enumerate(futures)}  # futureとインデックスのマッピング
+
+                # 完了したタスクから順に結果を取得
+                for future in as_completed(futures):
+                    idx = future_to_idx[future]
                     result = client.gather(future)
-                    results.append(result)
+                    results[idx] = result
                     # 進捗バーを更新
                     pbar.update(1)
 
