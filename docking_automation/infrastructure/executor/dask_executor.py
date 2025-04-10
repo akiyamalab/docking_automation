@@ -7,12 +7,17 @@ Daskを使った並列処理Executorモジュール。
 
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from dask.distributed import Client, LocalCluster, as_completed
 from dask_jobqueue.pbs import PBSCluster
 from dask_jobqueue.slurm import SLURMCluster
 from tqdm import tqdm
+
+from docking_automation.infrastructure.repositories.docking_result_repository_factory import (
+    DockingResultRepositoryFactory,
+)
 
 from .executor import ExecutorABC
 from .task import Task, TaskStatus
@@ -91,16 +96,20 @@ class DaskExecutor(ExecutorABC):
         # 単一タスクの場合は直接実行
         return task.execute()
 
-    def execute_many(self, tasks: List[Task]) -> List[Any]:
+    def execute_many(self, tasks: List[Task], repository_config: Dict[str, Any]) -> List[Any]:
         """
         複数のタスクを並列実行します。
 
         Args:
             tasks: 実行するタスクのリスト
+            repository_config: リポジトリの設定情報
 
         Returns:
             タスクの実行結果のリスト
         """
+        # リポジトリ設定の検証
+        if not repository_config:
+            raise ValueError("リポジトリ設定が指定されていません")
         if not tasks:
             return []
 
@@ -128,6 +137,21 @@ class DaskExecutor(ExecutorABC):
             print(f"タスクを並列実行中...")
             futures = client.compute(delayed_results)
 
+            # スケジューラ側で一元的に保存するためのリポジトリを作成
+            repository_type = repository_config.get("repository_type")
+            base_directory = repository_config.get("base_directory")
+            config = repository_config.get("config", {})
+
+            if not repository_type or not base_directory:
+                raise ValueError("リポジトリ設定が不完全です。repository_typeとbase_directoryは必須です。")
+
+            print(f"スケジューラ側で一元的に保存するためのリポジトリを作成します: {repository_type}")
+            repository = DockingResultRepositoryFactory.create(
+                repository_type=repository_type,
+                base_directory=Path(base_directory),
+                config=config,
+            )
+
             # 結果を取得（同期）- tqdmを使用して進捗状況と推定残り時間を表示
             print(f"結果を取得中...")
             # tqdmを使用して進捗バーを表示
@@ -138,8 +162,24 @@ class DaskExecutor(ExecutorABC):
                 # 完了したタスクから順に結果を取得
                 for future in as_completed(futures):
                     idx = future_to_idx[future]
-                    result = client.gather(future)
-                    results[idx] = result
+                    task_results = client.gather(future)
+                    results[idx] = task_results
+
+                    # スケジューラ側で一元的に保存
+                    # DockingResultCollectionの場合は各結果を個別に保存
+                    if hasattr(task_results, "__iter__") and not isinstance(task_results, str):
+                        for result in task_results:
+                            try:
+                                repository.save(result)
+                            except Exception as e:
+                                print(
+                                    f"警告: 結果の保存中にエラーが発生しました - "
+                                    f"タンパク質ID={result.protein_id if hasattr(result, 'protein_id') else 'unknown'}, "
+                                    f"化合物セットID={result.compound_set_id if hasattr(result, 'compound_set_id') else 'unknown'}, "
+                                    f"化合物インデックス={result.compound_index if hasattr(result, 'compound_index') else 'unknown'}, "
+                                    f"エラー: {e}"
+                                )
+
                     # 進捗バーを更新
                     pbar.update(1)
 

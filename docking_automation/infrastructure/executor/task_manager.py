@@ -64,7 +64,7 @@ class TaskManager:
         # TODO: [DDD] ドメインイベントの登録機能を実装する
         # self._register_domain_event("TaskAdded", task.id)
 
-    def execute_all(self, executor: Optional[ExecutorABC] = None) -> List[Any]:
+    def execute_all(self, repository_config: Dict[str, Any], executor: Optional[ExecutorABC] = None) -> List[Any]:
         """
         すべてのタスクを実行する。
 
@@ -76,10 +76,15 @@ class TaskManager:
 
         Args:
             executor: タスクを実行するためのエグゼキュータ（コンストラクタで指定していない場合は必須）
+            repository_config: リポジトリの設定情報（スケジューラ側での一元的な保存に使用、必須）
 
         Returns:
             タスクの実行結果のリスト
         """
+        # リポジトリ設定の検証
+        if not repository_config:
+            raise ValueError("リポジトリ設定が指定されていません")
+
         # エグゼキュータの取得
         actual_executor = executor or self.executor
         if actual_executor is None:
@@ -92,7 +97,7 @@ class TaskManager:
         try:
             # execute_manyメソッドが実装されている場合は、それを使用
             if hasattr(actual_executor, "execute_many") and callable(getattr(actual_executor, "execute_many")):
-                results = actual_executor.execute_many(self.tasks)
+                results = actual_executor.execute_many(self.tasks, repository_config=repository_config)
                 # TODO: [DDD] ドメインイベントの登録機能を実装する
                 # for task in self.tasks:
                 #     self._register_domain_event("TaskExecuted", task.id)

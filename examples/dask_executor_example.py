@@ -128,22 +128,20 @@ def copy_protein_structure(protein: "Protein", output_dir: Path, name_prefix: st
     return output_path
 
 
-def run_docking_with_persistence(
+def run_docking(
     protein: "Protein",
     compound_set: Union["CompoundSet", "PreprocessedCompoundSet"],
     grid_box: "GridBox",
     additional_params: Any,
-    repository_dir: Path,
 ) -> "DockingResultCollection":
     """
-    ドッキング計算を実行し、結果を永続化する。
+    ドッキング計算を実行する。
 
     Args:
         protein: タンパク質
         compound_set: 化合物セット
         grid_box: グリッドボックス
         additional_params: 追加パラメータ
-        repository_dir: リポジトリディレクトリ
 
     Returns:
         ドッキング結果のコレクション
@@ -180,31 +178,6 @@ def run_docking_with_persistence(
                 result.metadata[key] = value.tolist()
             elif isinstance(value, list) and len(value) > 0 and isinstance(value[0], np.ndarray):
                 result.metadata[key] = [arr.tolist() for arr in value]
-
-    # リポジトリを作成 (HDF5に変更)
-    repository = DockingResultRepositoryFactory.create(
-        repository_type=RepositoryType.HDF5,  # HDF5に変更
-        base_directory=repository_dir,
-        config={"mode": "append"},  # 追記モードに変更
-    )
-
-    # 結果を保存（バージョンの競合エラーを無視）
-    # 結果を個別に保存 (save_collection は HDF5リポジトリにないため)
-    for result in results:
-        try:
-            repository.save(result)
-        except Exception as e:
-            # HDF5リポジトリではバージョンの競合は発生しない想定だが、
-            # 他のエラーが発生する可能性はあるためログ出力
-            print(
-                f"警告: 結果の保存中にエラーが発生しました - "
-                f"タンパク質ID={result.protein_id}, "
-                f"化合物セットID={result.compound_set_id}, "
-                f"化合物インデックス={result.compound_index}, "
-                f"エラー: {e}"
-            )
-            # 必要に応じてエラーを再送出するかどうか検討
-            # raise e
 
     return results
 
@@ -274,13 +247,12 @@ def run_parallel_docking():
         for j, split_compound_set in enumerate(compound_sets):
             # 各分割された化合物セットに対してタスクを作成
             task = Task.create(
-                function=run_docking_with_persistence,
+                function=run_docking,  # 関数名を変更
                 args={
                     "protein": protein,
                     "compound_set": split_compound_set,
                     "grid_box": grid_box,
                     "additional_params": AutoDockVinaParameters(),
-                    "repository_dir": repository_dir,
                 },
                 id=f"docking_task_protein_{protein_name}_segment_{i}_chunk_{j}",
             )
@@ -291,7 +263,15 @@ def run_parallel_docking():
     task_manager = TaskManager(executor=executor)
     for task in docking_tasks:
         task_manager.add_task(task)
-    results = task_manager.execute_all()
+
+    # リポジトリ情報をタスクマネージャに渡す（スケジューラ側での一元的な保存のため）
+    results = task_manager.execute_all(
+        {
+            "repository_type": RepositoryType.HDF5,
+            "base_directory": repository_dir,
+            "config": {"mode": "append"},
+        }
+    )
 
     # 各タンパク質・セグメントごとの結果を保持
     protein_segment_results = {}
