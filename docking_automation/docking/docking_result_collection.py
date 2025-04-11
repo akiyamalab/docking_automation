@@ -2,11 +2,12 @@ import itertools
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, TypeVar, Union
 
-from sortedcontainers import SortedList  # type: ignore
+from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
 from .docking_result import DockingResult
 
 T = TypeVar("T")
+DockingResultT = TypeVar("DockingResultT", bound=DockingResult)
 
 
 class DockingResultCollection:
@@ -26,7 +27,7 @@ class DockingResultCollection:
         Args:
             results: 初期結果のリスト（指定しない場合は空のコレクションを作成）
         """
-        self._results = SortedList(key=lambda result: result.docking_score)
+        self._results: SortedList[DockingResult] = SortedList(key=lambda result: result.docking_score)
         if results:
             for result in results:
                 self._results.add(result)

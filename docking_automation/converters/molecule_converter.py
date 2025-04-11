@@ -4,11 +4,53 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Protocol
+
 
 # 外部ライブラリのインポート
-import openbabel.openbabel as ob  # type: ignore[import-untyped]
-import openbabel.pybel as pybel  # type: ignore[import-untyped]
+class OpenBabelModule(Protocol):
+    """OpenBabelモジュールのプロトコル定義"""
+
+    class OBMol:
+        pass
+
+    class OBConversion:
+        def __init__(self) -> None:
+            pass
+
+        def SetInAndOutFormats(self, in_format: str, out_format: str) -> bool:
+            return True
+
+        def ReadFile(self, mol: "OpenBabelModule.OBMol", filename: str) -> bool:
+            return True
+
+        def WriteFile(self, mol: "OpenBabelModule.OBMol", filename: str) -> bool:
+            return True
+
+        def __bool__(self) -> bool:
+            return True
+
+    class obErrorLog:
+        @staticmethod
+        def SetOutputLevel(level: int) -> None:
+            pass
+
+    obError: int
+
+
+class PybelModule(Protocol):
+    """Pybelモジュールのプロトコル定義"""
+
+    def readfile(self, format: str, filename: str) -> Any:
+        return None
+
+    def readstring(self, format: str, string: str) -> Any:
+        return None
+
+
+# 外部ライブラリのインポート
+import openbabel.openbabel as ob  # type: ignore
+import openbabel.pybel as pybel  # type: ignore
 from rdkit import Chem
 
 from docking_automation.infrastructure.utilities.error_utils import capture_stderr

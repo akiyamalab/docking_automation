@@ -71,7 +71,6 @@ class DockingToolABC(ABC):
         内部メソッドであり、直接呼び出すべきではない。
 
         複数の化合物に対してドッキング計算を行い、結果のリストを返す。
-        CompoundSetにインデックス範囲が設定されている場合は、その範囲内の化合物のみを処理する。
 
         Args:
             protein: ドッキング対象のタンパク質
@@ -82,15 +81,6 @@ class DockingToolABC(ABC):
         Returns:
             ドッキング結果のリスト
         """
-        # CompoundSetのプロパティを取得して、インデックス範囲が設定されているかどうかを確認
-        properties = compound_set.get_properties()
-        index_range = properties.get("index_range")
-
-        # インデックス範囲が設定されている場合は、その範囲内の化合物のみを処理するようにCompoundSetを分割
-        if index_range is not None:
-            start_index = index_range["start"]
-            end_index = index_range["end"]
-
         # 前処理
         preprocessed_protein = self._preprocess_protein(protein)
         preprocessed_compound_set = self._preprocess_compound_set(compound_set)
