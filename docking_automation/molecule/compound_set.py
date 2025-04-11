@@ -181,8 +181,22 @@ class CompoundSet:
 
     def split_by_chunks(self, chunk_size: int) -> List["CompoundSet"]:
         """
-        # TODO: あとでdocstringを追加する
+        化合物セットを指定されたチャンクサイズで分割する。
+
+        大きな化合物セットを小さなセットに分割して、並列処理などを効率化するために使用する。
+        分割された各化合物セットは元のファイルを参照するが、処理対象のインデックス範囲が制限される。
+
+        Args:
+            chunk_size: 各チャンクに含める化合物の最大数
+
+        Returns:
+            分割された化合物セットのリスト
+
+        Raises:
+            ValueError: チャンクサイズが1未満の場合
         """
+        if chunk_size < 1:
+            raise ValueError("チャンクサイズは1以上である必要があります")
 
         # 分割されたCompoundSetのリスト
         compound_sets = []
