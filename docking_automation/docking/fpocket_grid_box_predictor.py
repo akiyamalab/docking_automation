@@ -126,7 +126,7 @@ class FpocketGridBoxPredictor:
         cmd = [
             "fpocket",
             "-f",
-            str(protein_path.absolute()),  # 絶対パスを使用
+            str(protein_path.relative_to(Path.cwd())),  # 絶対パスを使用
         ]
 
         try:
