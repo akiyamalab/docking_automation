@@ -38,6 +38,7 @@ class CompoundSet:
         self.__id: str = id if id is not None else self.__path.stem
         self.__domain_events: List[DomainEvent] = []
         self.__index_range: Optional[Tuple[int, int]] = None  # インデックス範囲（開始、終了）
+        self.__compound_count: Optional[int] = None  # 化合物数のキャッシュ
 
         # 不変条件の検証
         if not self.__path.exists():
@@ -67,12 +68,19 @@ class CompoundSet:
         """
         化合物セットに含まれる化合物の数を取得する。
 
+        パスが更新されたときにのみ実際のカウントを行い、それ以外の場合はキャッシュされた値を返す。
+
         TODO: [P1] [DDD] インフラストラクチャの依存性を分離する
         - ファイル読み込みロジックをリポジトリに委譲する
 
         Returns:
             化合物の数
         """
+        # キャッシュされた値がある場合はそれを返す
+        if self.__compound_count is not None:
+            return self.__compound_count
+
+        # キャッシュがない場合は実際にカウントする
         # ファイル形式を判断
         file_format = self.path.suffix.lower()
 
@@ -82,14 +90,16 @@ class CompoundSet:
             actual_format = self.path.stem.split(".")[-1].lower()
 
             if actual_format == "sdf":
-                return self._count_compounds_in_sdf()
+                self.__compound_count = self._count_compounds_in_sdf()
             else:
                 raise ValueError(f"サポートされていないファイル形式です: {actual_format}")
         # 非圧縮ファイルの場合
         elif file_format == ".sdf":
-            return self._count_compounds_in_sdf()
+            self.__compound_count = self._count_compounds_in_sdf()
         else:
             raise ValueError(f"サポートされていないファイル形式です: {file_format}")
+            
+        return self.__compound_count
 
     def _count_compounds_in_sdf(self) -> int:
         """
@@ -171,6 +181,10 @@ class CompoundSet:
         """
         old_path = self.path
         new_compound_set = CompoundSet(path=new_path, id=self.id)
+        
+        # 新しいパスでは化合物数を再計算する必要があるため、キャッシュを無効化
+        # 次回get_compound_countが呼ばれたときに再計算される
+        new_compound_set.__compound_count = None
 
         # パスが変更されたことを表すイベントを登録
         new_compound_set._register_domain_event(
