@@ -1,6 +1,6 @@
 import itertools
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, TypeVar, Union
 
 from sortedcontainers import SortedList  # type: ignore[import-untyped]
 
@@ -20,14 +20,16 @@ class DockingResultCollection:
     """
 
     # TODO: factoryを使って results list[DockingResult] = [] とする
-    def __init__(self, results: Optional[List[DockingResult]] = None) -> None:
+    def __init__(self, results: Optional[List[DockingResult]] = None, execution_time: Optional[float] = None) -> None:
         """
         DockingResultCollectionオブジェクトを初期化する。
 
         Args:
             results: 初期結果のリスト（指定しない場合は空のコレクションを作成）
+            execution_time: このコレクションが生成される元となった処理の実行時間（秒）（オプション）
         """
         self._results: SortedList[DockingResult] = SortedList(key=lambda result: result.docking_score)
+        self.execution_time: Optional[float] = execution_time
         if results:
             for result in results:
                 self._results.add(result)

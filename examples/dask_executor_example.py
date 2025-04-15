@@ -10,6 +10,7 @@ Alphafoldで作成されたタンパク質構造をセグメンテーション�
 
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Union
 
@@ -17,7 +18,6 @@ import numpy as np
 
 # OpenBabelのwarningを完全に抑制するための設定
 os.environ["BABEL_QUIET"] = "1"
-
 
 from docking_automation.docking import (
     AutoDockVina,
@@ -32,6 +32,11 @@ from docking_automation.infrastructure.executor import DaskExecutor, Task, TaskM
 from docking_automation.infrastructure.repositories.docking_result_repository_factory import (
     DockingResultRepositoryFactory,
     RepositoryType,
+)
+
+# 時間計測用デコレータをインポート
+from docking_automation.infrastructure.utilities.time_utils import (
+    measure_execution_time,
 )
 from docking_automation.molecule import CompoundSet, Protein
 
@@ -128,6 +133,7 @@ def copy_protein_structure(protein: "Protein", output_dir: Path, name_prefix: st
     return output_path
 
 
+@measure_execution_time
 def run_docking(
     protein: "Protein",
     compound_set: Union["CompoundSet", "PreprocessedCompoundSet"],
@@ -392,6 +398,24 @@ def run_parallel_docking():
     print("\n=== 永続化されたドッキング結果 ===")
     print(f"リポジトリディレクトリ: {repository_dir}")
     print(f"永続化された結果は後で検索・利用できます。")
+
+    # 合計実行時間の計算と表示
+    total_execution_time = 0.0
+    valid_results_count = 0
+    for i, task in enumerate(docking_tasks):
+        task_result = results[i]
+        if hasattr(task_result, "execution_time") and task_result.execution_time is not None:
+            total_execution_time += task_result.execution_time
+            valid_results_count += 1
+
+    if valid_results_count > 0:
+        print("\n=== 実行時間集計 ===")
+        print(f"実行時間計測対象タスク数: {valid_results_count}")
+        print(f"全ドッキングタスクの合計実行時間: {total_execution_time:.2f} 秒")
+        avg_time = total_execution_time / valid_results_count
+        print(f"タスクあたりの平均実行時間: {avg_time:.2f} 秒")
+    else:
+        print("\n実行時間が計測されたタスクはありませんでした。")
 
     # 統合されたSDFファイルやタンパク質ごとのSDFファイルは出力せず、
     # セグメントごとの結果のみを出力します（上記のループ内で既に出力済み）
