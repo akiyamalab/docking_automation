@@ -62,7 +62,7 @@ class DaskExecutor(ExecutorABC):
         if self.scheduler_type == "local":
             # ローカル環境
 
-            cluster = LocalCluster(n_workers=self.n_workers)
+            cluster = LocalCluster(n_workers=self.n_workers, threads_per_worker=1)
             client = Client(cluster)
             print(f"ローカル環境で実行します（ワーカー数: {client.ncores}）")
             return client

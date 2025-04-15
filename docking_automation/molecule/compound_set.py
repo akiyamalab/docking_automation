@@ -1,9 +1,16 @@
-import gzip
+import os
+import shutil
+import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from docking_automation.domain.domain_event import DomainEvent
+from docking_automation.infrastructure.utilities.file_utils import (
+    count_compounds_in_sdf,
+    read_compounds_from_sdf,
+    safe_open,
+)
 from docking_automation.molecule.compound_set_events import (
     CompoundSetPathUpdated,
     CompoundSetRegistered,
@@ -39,6 +46,12 @@ class CompoundSet:
         self.__domain_events: List[DomainEvent] = []
         self.__index_range: Optional[Tuple[int, int]] = None  # インデックス範囲（開始、終了）
         self.__compound_count: Optional[int] = None  # 化合物数のキャッシュ
+
+        # 一時ファイル関連の属性（デフォルトではNone）
+        # これらの属性は分割時に設定される
+        self._original_indices: Optional[List[int]] = None  # 元のインデックスのリスト
+        self._original_compound_set_id: Optional[str] = None  # 元の化合物セットのID
+        self._temp_dir: Optional[str] = None  # 一時ディレクトリのパス
 
         # 不変条件の検証
         if not self.__path.exists():
@@ -90,41 +103,16 @@ class CompoundSet:
             actual_format = self.path.stem.split(".")[-1].lower()
 
             if actual_format == "sdf":
-                self.__compound_count = self._count_compounds_in_sdf()
+                self.__compound_count = count_compounds_in_sdf(self.path)
             else:
                 raise ValueError(f"サポートされていないファイル形式です: {actual_format}")
         # 非圧縮ファイルの場合
         elif file_format == ".sdf":
-            self.__compound_count = self._count_compounds_in_sdf()
+            self.__compound_count = count_compounds_in_sdf(self.path)
         else:
             raise ValueError(f"サポートされていないファイル形式です: {file_format}")
-            
+
         return self.__compound_count
-
-    def _count_compounds_in_sdf(self) -> int:
-        """
-        SDFファイル内の化合物数をカウントする。
-
-        Returns:
-            化合物の数
-        """
-        try:
-            if str(self.path).endswith(".gz"):
-                with gzip.open(self.path, "rt") as f:
-                    count = 0
-                    for line in f:
-                        if "$$$$" in line:
-                            count += 1
-                    return count
-            else:
-                with open(self.path, "rt") as f:
-                    count = 0
-                    for line in f:
-                        if "$$$$" in line:
-                            count += 1
-                    return count
-        except Exception as e:
-            raise ValueError(f"化合物数のカウント中にエラーが発生しました: {e}")
 
     def __eq__(self, other: object) -> bool:
         """
@@ -181,7 +169,7 @@ class CompoundSet:
         """
         old_path = self.path
         new_compound_set = CompoundSet(path=new_path, id=self.id)
-        
+
         # 新しいパスでは化合物数を再計算する必要があるため、キャッシュを無効化
         # 次回get_compound_countが呼ばれたときに再計算される
         new_compound_set.__compound_count = None
@@ -193,15 +181,18 @@ class CompoundSet:
 
         return new_compound_set
 
-    def split_by_chunks(self, chunk_size: int) -> List["CompoundSet"]:
+    def split_by_chunks(self, chunk_size: int, compress: bool = False) -> List["CompoundSet"]:
         """
         化合物セットを指定されたチャンクサイズで分割する。
 
         大きな化合物セットを小さなセットに分割して、並列処理などを効率化するために使用する。
-        分割された各化合物セットは元のファイルを参照するが、処理対象のインデックス範囲が制限される。
+        分割された各化合物セットは元のファイルの一部を含む新しい一時ファイルを参照する。
+        これにより、複数のタスクが同時に同じファイルにアクセスする際の非効率性を回避する。
+        分割されたファイルは一時ファイルとして保存され、計算終了後に自動的に削除される。
 
         Args:
             chunk_size: 各チャンクに含める化合物の最大数
+            compress: 分割後のファイルを圧縮するかどうか（デフォルトはFalse）
 
         Returns:
             分割された化合物セットのリスト
@@ -216,21 +207,55 @@ class CompoundSet:
         compound_sets = []
         # 開始インデックス
         start_index = 0
+        # 化合物の総数
+        total_compounds = self.get_compound_count()
 
-        for i in range(0, self.get_compound_count(), chunk_size):
-            end_index = i + chunk_size
-            if end_index > self.get_compound_count():
-                end_index = self.get_compound_count()
-            compound_set = self.with_index_range(start_index, end_index)
-            compound_sets.append(compound_set)
-            start_index = end_index
+        # 各チャンクごとに独自の一時ディレクトリを作成
+        # これにより、各CompoundSetオブジェクトが独立した一時ディレクトリを持つようになる
+        main_temp_dir = tempfile.mkdtemp()
 
-        # 端数処理
-        if start_index < self.get_compound_count():
-            compound_set = self.with_index_range(start_index, self.get_compound_count())
-            compound_sets.append(compound_set)
+        # ファイル形式を判断
 
-        return compound_sets
+        try:
+            # SDFファイルから化合物データを読み込む
+            compound_data = list(read_compounds_from_sdf(self.path))
+
+            # チャンクごとに一時ファイルを作成（各チャンクは独自の一時ディレクトリを持つ）
+            for i in range(0, total_compounds, chunk_size):
+                end_index = min(i + chunk_size, total_compounds)
+                chunk_compounds = compound_data[i:end_index]
+
+                # チャンクごとに独自の一時ディレクトリを作成
+                chunk_temp_dir = os.path.join(main_temp_dir, f"chunk_{i}_{end_index}")
+                os.makedirs(chunk_temp_dir, exist_ok=True)
+
+                # 一時ファイルのパスを生成
+                temp_file_path = os.path.join(chunk_temp_dir, f"{self.id}_chunk_{i}_{end_index}.sdf")
+                # 圧縮オプションに基づいてファイル形式を決定
+                if compress:
+                    temp_file_path += ".gz"
+
+                # 一時ファイルに書き込み（file_utilsのsafe_open関数を使用）
+                with safe_open(temp_file_path, "wt") as temp_f:
+                    for _, compound_lines in chunk_compounds:
+                        temp_f.writelines(compound_lines)
+
+                # 新しいCompoundSetを作成し、元のインデックス情報を保持
+                new_compound_set = CompoundSet(path=temp_file_path, id=f"{self.id}_chunk_{i}_{end_index}")
+
+                # 元のインデックス情報をメタデータとして保存
+                original_indices = [idx for idx, _ in chunk_compounds]
+                new_compound_set._original_indices = original_indices
+                new_compound_set._original_compound_set_id = self.id
+                new_compound_set._temp_dir = chunk_temp_dir  # チャンク固有の一時ディレクトリへの参照を保持
+
+                compound_sets.append(new_compound_set)
+
+            return compound_sets
+        except Exception as e:
+            # エラーが発生した場合はメイン一時ディレクトリを削除
+            shutil.rmtree(main_temp_dir, ignore_errors=True)
+            raise ValueError(f"化合物セットの分割中にエラーが発生しました: {e}")
 
     def with_index_range(self, start_index: int, end_index: int) -> "CompoundSet":
         """
@@ -275,6 +300,7 @@ class CompoundSet:
         指定されたインデックスの化合物を取得する。
 
         インデックス範囲が設定されている場合は、その範囲内のインデックスのみが有効。
+        分割されたCompoundSetの場合、元のCompoundSetにおけるインデックスも返される。
 
         Args:
             index: 取得する化合物のインデックス
@@ -296,7 +322,19 @@ class CompoundSet:
         if index < 0 or index >= total_compounds:
             raise IndexError(f"インデックス {index} は範囲外です（0-{total_compounds-1}）")
 
-        return {"index": index, "compound_set_id": self.id}
+        # 基本情報
+        compound_info = {"index": index, "compound_set_id": self.id}
+
+        # 元のインデックス情報がある場合は追加
+        if (
+            hasattr(self, "_original_indices")
+            and self._original_indices is not None
+            and index < len(self._original_indices)
+        ):
+            compound_info["original_index"] = self._original_indices[index]
+            compound_info["original_compound_set_id"] = self._original_compound_set_id
+
+        return compound_info
 
     # TODO: [P2] [DDD] 集約ルートとしての操作を追加する
     def get_all_compounds(self) -> List[Dict[str, Any]]:
@@ -349,19 +387,20 @@ class CompoundSet:
         return compound_set
 
     @classmethod
-    def create_empty(cls, id: Optional[str] = None, temp_dir: Optional[str | Path] = None) -> "CompoundSet":
+    def create_empty(
+        cls, id: Optional[str] = None, temp_dir: Optional[str | Path] = None, compress: bool = False
+    ) -> "CompoundSet":
         """
         空の化合物セットを作成するファクトリメソッド。
 
         Args:
             id: 化合物セットのID（指定しない場合は自動生成）
             temp_dir: 一時ファイルを作成するディレクトリ
+            compress: ファイルを圧縮するかどうか（デフォルトはFalse）
 
         Returns:
             作成された空の化合物セット
         """
-        import os
-        import tempfile
 
         # 一時ファイルを作成
         if temp_dir is None:
@@ -373,20 +412,26 @@ class CompoundSet:
         # UUIDベースのIDを生成
         actual_id = id or f"compound_set_{uuid.uuid4()}"
 
-        # 空のSDFファイルを作成
+        # 空のSDFファイルを作成（圧縮オプションに基づいてファイル形式を決定）
         temp_file = temp_dir_path / f"{actual_id}.sdf"
-        with open(temp_file, "w") as f:
+        if compress:
+            temp_file = temp_file.with_suffix(".sdf.gz")
+
+        with safe_open(temp_file, "w") as f:
             # 空のSDFファイル
             pass
 
         # CompoundSetオブジェクトを作成
-        return cls.create(path=temp_file, id=actual_id)
+        compound_set = cls.create(path=temp_file, id=actual_id)
+        compound_set._temp_dir = temp_dir  # 一時ディレクトリへの参照を保持
+        return compound_set
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         """
         化合物セットのイテレータを取得する。
 
         インデックス範囲が設定されている場合は、その範囲内の化合物のみをイテレートする。
+        分割されたCompoundSetの場合、元のCompoundSetにおけるインデックス情報も含まれる。
 
         Returns:
             化合物のイテレータ
@@ -423,6 +468,7 @@ class CompoundSet:
         化合物セットのプロパティを取得する。
 
         インデックス範囲が設定されている場合は、その情報も含める。
+        分割されたCompoundSetの場合、元のCompoundSetに関する情報も含める。
 
         Returns:
             プロパティの辞書
@@ -446,5 +492,11 @@ class CompoundSet:
                 "end": end_index,
                 "total_compounds": self.get_compound_count(),  # 全体の化合物の数
             }
+
+        # 元のインデックス情報がある場合は追加
+        if hasattr(self, "_original_indices"):
+            properties["original_indices"] = self._original_indices
+            properties["original_compound_set_id"] = self._original_compound_set_id
+            properties["is_temp_file"] = True
 
         return properties
