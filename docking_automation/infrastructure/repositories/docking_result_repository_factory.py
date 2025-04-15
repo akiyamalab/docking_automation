@@ -68,7 +68,7 @@ class DockingResultRepositoryFactory:
             # ディレクトリが存在しない場合は作成
             hdf5_file_path.parent.mkdir(parents=True, exist_ok=True)
             # configからモードを取得（デフォルトは"overwrite"）
-            mode = config.get("mode", "overwrite")
+            mode = str(config.get("mode", "overwrite"))
             return HDF5DockingResultRepository(hdf5_file_path=hdf5_file_path, mode=mode)
         else:
             raise ValueError(f"未対応のリポジトリ種類です: {repository_type}")

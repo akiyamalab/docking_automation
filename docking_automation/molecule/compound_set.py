@@ -238,7 +238,8 @@ class CompoundSet:
                 # 一時ファイルに書き込み（file_utilsのsafe_open関数を使用）
                 with safe_open(temp_file_path, "wt") as temp_f:
                     for _, compound_lines in chunk_compounds:
-                        temp_f.writelines(compound_lines)
+                        for line in compound_lines:
+                            temp_f.write(line)  # type: ignore
 
                 # 新しいCompoundSetを作成し、元のインデックス情報を保持
                 new_compound_set = CompoundSet(path=temp_file_path, id=f"{self.id}_chunk_{i}_{end_index}")
@@ -247,7 +248,7 @@ class CompoundSet:
                 original_indices = [idx for idx, _ in chunk_compounds]
                 new_compound_set._original_indices = original_indices
                 new_compound_set._original_compound_set_id = self.id
-                new_compound_set._temp_dir = chunk_temp_dir  # チャンク固有の一時ディレクトリへの参照を保持
+                new_compound_set._temp_dir = str(chunk_temp_dir)  # チャンク固有の一時ディレクトリへの参照を保持
 
                 compound_sets.append(new_compound_set)
 
@@ -423,7 +424,7 @@ class CompoundSet:
 
         # CompoundSetオブジェクトを作成
         compound_set = cls.create(path=temp_file, id=actual_id)
-        compound_set._temp_dir = temp_dir  # 一時ディレクトリへの参照を保持
+        compound_set._temp_dir = str(temp_dir) if temp_dir is not None else None  # 一時ディレクトリへの参照を保持
         return compound_set
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:

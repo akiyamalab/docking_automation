@@ -96,18 +96,19 @@ class DaskExecutor(ExecutorABC):
         # 単一タスクの場合は直接実行
         return task.execute()
 
-    def execute_many(self, tasks: List[Task], repository_config: Dict[str, Any]) -> List[Any]:
+    def execute_many(self, tasks: List[Task], **kwargs) -> List[Any]:
         """
         複数のタスクを並列実行します。
 
         Args:
             tasks: 実行するタスクのリスト
-            repository_config: リポジトリの設定情報
+            **kwargs: 追加のパラメータ（例：repository_config）
 
         Returns:
             タスクの実行結果のリスト
         """
         # リポジトリ設定の検証
+        repository_config = kwargs.get("repository_config", {})
         if not repository_config:
             raise ValueError("リポジトリ設定が指定されていません")
         if not tasks:

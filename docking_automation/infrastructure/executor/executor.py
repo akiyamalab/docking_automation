@@ -44,12 +44,13 @@ class ExecutorABC(ABC):
 
     # TODO: [DDD] 複数タスクの実行機能を追加する
     @abstractmethod
-    def execute_many(self, tasks: List[Task]) -> List[Any]:
+    def execute_many(self, tasks: List[Task], **kwargs) -> List[Any]:
         """
         複数のタスクを実行する。
 
         Args:
             tasks: 実行するタスクのリスト
+            **kwargs: 追加のパラメータ（例：repository_config）
 
         Returns:
             タスクの実行結果のリスト

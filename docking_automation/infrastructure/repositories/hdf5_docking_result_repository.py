@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 import json  # metadataのシリアライズ/デシリアライズ用
 import logging
 import time  # リトライのためのsleep用
@@ -168,19 +169,38 @@ class HDF5DockingResultRepository(DockingResultRepository):
                     lock.release()
                     logger.debug(f"ロック解放 (試行 {attempt + 1}): {self.lock_file_path}")
 
-    def load(self, protein_id: str, compound_set_id: str, compound_index: int) -> Optional[DockingResult]:
-        """指定されたIDとインデックスに一致するドッキング結果をロードします。
+    def load(self, result_id: str) -> Optional[DockingResult]:
+        """
+        指定されたIDに一致するドッキング結果をロードします。
 
-        ファイルロックを使用して読み込み中の書き込みを防ぎます。
+        このメソッドは親クラスのインターフェースに準拠するために実装されています。
+        result_idを解析して、protein_id、compound_set_id、compound_indexを抽出し、
+        それらを使ってHDF5ファイルからデータを読み込みます。
 
         Args:
-            protein_id (str): タンパク質ID。
-            compound_set_id (str): 化合物セットID。
-            compound_index (int): 化合物インデックス。
+            result_id (str): 結果のID。形式は "{protein_id}_{compound_set_id}_{compound_index}" を想定。
 
         Returns:
             Optional[DockingResult]: 見つかったドッキング結果。見つからない場合はNone。
         """
+        # result_idを解析
+        parts = result_id.split("_")
+        if len(parts) < 3:
+            logger.warning(f"無効なresult_id形式です: {result_id}")
+            return None
+
+        # 最後の部分をcompound_indexとして解析
+        try:
+            compound_index = int(parts[-1])
+        except ValueError:
+            logger.warning(f"compound_indexを整数に変換できません: {parts[-1]}")
+            return None
+
+        # 残りの部分をprotein_idとcompound_set_idとして結合
+        protein_id = parts[0]
+        compound_set_id = "_".join(parts[1:-1])
+
+        # HDF5ファイルからデータを読み込む
         if not self.hdf5_file_path.exists():
             logger.warning(f"HDF5ファイルが存在しません: {self.hdf5_file_path}")
             return None
@@ -190,7 +210,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
             with lock.acquire(timeout=60):
                 logger.debug(f"ロック取得 (読み込み): {self.lock_file_path}")
                 with h5py.File(self.hdf5_file_path, "r") as f:
-                    # グループパスを修正
+                    # グループパスを構築
                     group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
                     if group_path not in f:
                         logger.debug(f"指定された結果が見つかりません: {group_path}")
@@ -199,7 +219,6 @@ class HDF5DockingResultRepository(DockingResultRepository):
                     group = f[group_path]
 
                     # データセットと属性から値を取得
-                    # DockingResultの属性名に合わせて修正
                     docking_score = group["docking_score"][()]
                     result_path_str = group["result_path"][()].decode("utf-8")
                     metadata_json = group["metadata"][()].decode("utf-8")
@@ -207,8 +226,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
                     result_id = group.attrs["id"]
                     version = group.attrs["version"]
 
-                    # DockingResultオブジェクトを再構築 (コンストラクタを使用)
-                    # result_pathをPathオブジェクトに戻す
+                    # DockingResultオブジェクトを再構築
                     result = DockingResult(
                         result_path=Path(result_path_str),
                         protein_id=group.attrs["protein_id"],

@@ -90,9 +90,8 @@ class TestHDF5DockingResultRepository:
         hdf5_repo.save(sample_result1)
 
         # loadメソッドの引数を修正
-        loaded_result = hdf5_repo.load(
-            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
-        )
+        result_id = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        loaded_result = hdf5_repo.load(result_id)
 
         assert loaded_result is not None
         assert loaded_result.protein_id == sample_result1.protein_id
@@ -105,7 +104,7 @@ class TestHDF5DockingResultRepository:
     def test_load_non_existent(self, hdf5_repo: HDF5DockingResultRepository):
         """存在しない結果をロードしようとするとNoneが返ることを確認する。"""
         # loadメソッドの引数を修正
-        loaded_result = hdf5_repo.load("non_existent_protein", "non_existent_set", 0)
+        loaded_result = hdf5_repo.load("non_existent_protein_non_existent_set_0")
         assert loaded_result is None
 
     def test_save_overwrites_existing(
@@ -128,9 +127,8 @@ class TestHDF5DockingResultRepository:
         hdf5_repo.save(updated_result)
 
         # loadメソッドの引数を修正
-        loaded_result = hdf5_repo.load(
-            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
-        )
+        result_id = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        loaded_result = hdf5_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == -10.0
         assert loaded_result.get_metadata_value("pose_data") == "updated pose data"
@@ -182,21 +180,15 @@ class TestHDF5DockingResultRepository:
         hdf5_repo.save(sample_result2)
 
         # load/deleteメソッドの引数を修正
-        assert (
-            hdf5_repo.load(sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index)
-            is not None
-        )
+        result_id1 = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        assert hdf5_repo.load(result_id1) is not None
+
         hdf5_repo.delete(sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index)
-        assert (
-            hdf5_repo.load(sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index)
-            is None
-        )
+        assert hdf5_repo.load(result_id1) is None
 
         # 他の結果は残っていることを確認
-        assert (
-            hdf5_repo.load(sample_result2.protein_id, sample_result2.compound_set_id, sample_result2.compound_index)
-            is not None
-        )
+        result_id2 = f"{sample_result2.protein_id}_{sample_result2.compound_set_id}_{sample_result2.compound_index}"
+        assert hdf5_repo.load(result_id2) is not None
 
         # HDF5ファイル内部のグループが削除されているか確認 (オプション)
         # グループパスを修正
@@ -236,9 +228,8 @@ class TestHDF5DockingResultRepository:
         hdf5_repo.update(updated_result)  # updateは内部でsaveを呼ぶ
 
         # loadメソッドの引数を修正
-        loaded_result = hdf5_repo.load(
-            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
-        )
+        result_id = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        loaded_result = hdf5_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == -11.0
         assert loaded_result.get_metadata_value("pose_data") == "updated via update method"
@@ -286,9 +277,8 @@ class TestHDF5DockingResultRepository:
         append_repo.save(updated_result)
 
         # 元のデータが保持されていることを確認
-        loaded_result = append_repo.load(
-            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
-        )
+        result_id = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        loaded_result = append_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == sample_result1.docking_score  # 元のスコアが保持されている
         assert loaded_result.get_metadata_value("pose_data") == sample_result1.get_metadata_value(
@@ -318,9 +308,8 @@ class TestHDF5DockingResultRepository:
         append_repo.update(updated_result)
 
         # データが上書きされていることを確認
-        loaded_result = append_repo.load(
-            sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index
-        )
+        result_id = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        loaded_result = append_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == -11.0  # 更新されたスコア
         assert loaded_result.get_metadata_value("pose_data") == "updated via update method"  # 更新されたメタデータ
@@ -362,8 +351,10 @@ def _save_task_func(repo_path: Path, result: DockingResult, delay: float = 0, mo
 
         # 両方の結果が正しく保存されているか確認
         # loadメソッドの引数を修正
-        loaded1 = repo.load(sample_result1.protein_id, sample_result1.compound_set_id, sample_result1.compound_index)
-        loaded2 = repo.load(sample_result2.protein_id, sample_result2.compound_set_id, sample_result2.compound_index)
+        result_id1 = f"{sample_result1.protein_id}_{sample_result1.compound_set_id}_{sample_result1.compound_index}"
+        result_id2 = f"{sample_result2.protein_id}_{sample_result2.compound_set_id}_{sample_result2.compound_index}"
+        loaded1 = repo.load(result_id1)
+        loaded2 = repo.load(result_id2)
 
         assert loaded1 is not None
         assert loaded1.docking_score == sample_result1.docking_score

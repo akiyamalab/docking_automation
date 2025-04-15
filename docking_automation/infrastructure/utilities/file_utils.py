@@ -1,7 +1,8 @@
 import gzip
+import io
 import os
 from pathlib import Path
-from typing import Iterator, List, Tuple
+from typing import Iterator, List, Tuple, Union
 
 
 def expandpath(path: str | Path) -> Path:
@@ -13,7 +14,7 @@ def expandpath(path: str | Path) -> Path:
     return Path(os.path.expandvars(path))
 
 
-def safe_open(filepath: str | Path, mode: str = "rt"):
+def safe_open(filepath: str | Path, mode: str = "rt") -> Union[gzip.GzipFile, io.TextIOWrapper]:
     """
     ファイルを安全に開くためのユーティリティ関数。
     gzipで圧縮されたファイルの場合は自動的に展開して開きます。
@@ -29,11 +30,11 @@ def safe_open(filepath: str | Path, mode: str = "rt"):
     if str(filepath).endswith(".gz"):
         fileobj = gzip.open(filepath, mode)
     else:
-        fileobj = __builtins__["open"](filepath, mode)
+        fileobj = open(filepath, mode)  # type: ignore
     return fileobj
 
 
-def read_compounds_from_sdf(filepath: str | Path) -> Iterator[Tuple[int, List[str]]]:
+def read_compounds_from_sdf(filepath: str | Path) -> Iterator[Tuple[int, List[str | bytes]]]:
     """
     SDFファイルから化合物データを読み込み、各化合物データをyieldするジェネレータ。
     各化合物は"$$$$"で区切られる。
