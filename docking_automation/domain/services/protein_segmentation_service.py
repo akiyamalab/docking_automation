@@ -40,18 +40,34 @@ class ProteinSegmentationService:
         else:
             print(f"[ProteinSegmentation] {message}")
 
-    def segment(self, protein: Protein, options: Dict[str, Any], final_output_dir: Path) -> List[Protein]:
+    def segment(self, protein: Protein, options: Optional[Dict[str, Any]], final_output_dir: Path) -> List[Protein]:
         """
         タンパク質のセグメンテーションを実行する。
 
         Args:
             protein: 入力となる `Protein` オブジェクト
-            options: AlphaCutterに渡すコマンドラインオプション（辞書形式）
+            options: AlphaCutterに渡すコマンドラインオプション（辞書形式）。
+                     Noneの場合はAlphaCutterの推奨設定が使用されます。
             final_output_dir: 最終的な出力ファイル（分割されたPDBなど）を保存するディレクトリパス
 
         Returns:
             生成された新しい `Protein` オブジェクトのリスト
         """
+        # デフォルトオプションの設定（AlphaCutterの推奨設定）
+        default_options = {
+            "loop_min": 20,
+            "helix_min": 30,
+            "fragment_min": 5,
+            "domain_min": 50,
+            "pLDDT_min": 0,
+            "local_contact_range": 5,
+            "domain_out": True,
+            "single_out": True,
+        }
+
+        # optionsがNoneの場合はデフォルト値を使用
+        if options is None:
+            options = default_options.copy()
         # スクリプトパスの取得
         script_path = self._get_script_path()
 

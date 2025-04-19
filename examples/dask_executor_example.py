@@ -10,7 +10,6 @@ Alphafoldで作成されたタンパク質構造をセグメンテーション�
 
 import os
 import shutil
-import time
 from pathlib import Path
 from typing import Any, Union
 
@@ -30,7 +29,6 @@ from docking_automation.domain.services.protein_segmentation_service import (
 )
 from docking_automation.infrastructure.executor import DaskExecutor, Task, TaskManager
 from docking_automation.infrastructure.repositories.docking_result_repository_factory import (
-    DockingResultRepositoryFactory,
     RepositoryType,
 )
 
@@ -77,25 +75,13 @@ def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
     protein = Protein.create(path=protein_path)
     print(str(protein))
 
-    # AlphaCutterのオプション設定
-    options = {
-        "loop_min": 20,
-        "helix_min": 30,
-        "fragment_min": 5,
-        "domain_min": 50,
-        "pLDDT_min": 0,
-        "local_contact_range": 5,
-        "domain_out": True,
-        "single_out": True,
-    }
-
     # ProteinSegmentationServiceの作成と実行
     # 進捗状況を標準出力に表示するコールバック関数
     def progress_callback(message: str):
         print(message)
 
     service = ProteinSegmentationService(progress_callback=progress_callback)
-    segmented_proteins = service.segment(protein, options, output_dir)
+    segmented_proteins = service.segment(protein, None, output_dir)
 
     # 結果の表示
     print(service.get_segmentation_summary(segmented_proteins, protein))
