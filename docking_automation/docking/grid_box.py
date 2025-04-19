@@ -116,6 +116,42 @@ class GridBox:
         """
         return self.__size.copy()
 
+    def __str__(self) -> str:
+        """
+        GridBoxの文字列表現を返す。
+
+        Returns:
+            GridBoxの文字列表現
+        """
+        return f"GridBox: 中心座標=({self.format_center()}), サイズ=({self.format_size()})"
+
+    def __repr__(self) -> str:
+        """
+        GridBoxの再現可能な文字列表現を返す。
+
+        Returns:
+            GridBoxの再現可能な文字列表現
+        """
+        return f"GridBox(center={self.center}, size={self.size})"
+
+    def format_center(self) -> str:
+        """
+        中心座標をフォーマットした文字列を返す。
+
+        Returns:
+            フォーマットされた中心座標の文字列
+        """
+        return f"{self.__center[0]:.3f}, {self.__center[1]:.3f}, {self.__center[2]:.3f}"
+
+    def format_size(self) -> str:
+        """
+        サイズをフォーマットした文字列を返す。
+
+        Returns:
+            フォーマットされたサイズの文字列
+        """
+        return f"{self.__size[0]:.3f}, {self.__size[1]:.3f}, {self.__size[2]:.3f}"
+
     @classmethod
     def from_fpocket(cls, protein: Protein, pocket_rank: int = 1, keep_temp_files: bool = False) -> "GridBox":
         """

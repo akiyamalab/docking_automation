@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from docking_automation.molecule.protein import Protein
 from docking_automation.molecule.protein_events import ProteinSegmented
@@ -18,6 +18,27 @@ class ProteinSegmentationService:
     AlphaCutterスクリプトを使用して、タンパク質の低信頼度領域や非局所的相互作用を持たない
     フレキシブルな領域を除去し、構造的に安定したドメインを抽出・分割する。
     """
+
+    def __init__(self, progress_callback: Optional[Callable[[str], None]] = None):
+        """
+        ProteinSegmentationServiceを初期化する。
+
+        Args:
+            progress_callback: 進捗状況を報告するコールバック関数（オプション）
+        """
+        self._progress_callback = progress_callback
+
+    def _report_progress(self, message: str) -> None:
+        """
+        進捗状況を報告する。
+
+        Args:
+            message: 進捗メッセージ
+        """
+        if self._progress_callback:
+            self._progress_callback(message)
+        else:
+            print(f"[ProteinSegmentation] {message}")
 
     def segment(self, protein: Protein, options: Dict[str, Any], final_output_dir: Path) -> List[Protein]:
         """
@@ -37,6 +58,8 @@ class ProteinSegmentationService:
         # 出力ディレクトリの作成
         os.makedirs(final_output_dir, exist_ok=True)
 
+        self._report_progress(f"タンパク質 {protein.id} のセグメンテーションを開始します")
+
         # 一時ディレクトリで処理を実行
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -44,18 +67,26 @@ class ProteinSegmentationService:
             # 入力ファイルを一時ディレクトリにコピー
             input_file_path = temp_dir_path / protein.path.name
             shutil.copy(protein.path, input_file_path)
+            self._report_progress(f"入力ファイルを一時ディレクトリにコピーしました: {input_file_path}")
 
             # コマンドの構築
             command = self._build_alpha_cutter_command(script_path, input_file_path, options)
+            self._report_progress("AlphaCutterコマンドを構築しました")
 
             # AlphaCutterの実行
+            self._report_progress("AlphaCutterを実行中...")
             self._run_alpha_cutter(command, temp_dir_path)
+            self._report_progress("AlphaCutterの実行が完了しました")
 
             # 出力ファイルの収集
+            self._report_progress("出力ファイルを収集中...")
             output_file_paths = self._collect_outputs(temp_dir_path, final_output_dir)
+            self._report_progress(f"{len(output_file_paths)}個の出力ファイルを収集しました")
 
             # 新しいProteinオブジェクトの生成
+            self._report_progress("新しいProteinオブジェクトを生成中...")
             segmented_proteins = self._create_protein_objects(output_file_paths, protein)
+            self._report_progress(f"{len(segmented_proteins)}個のセグメントが生成されました")
 
             # ドメインイベントの発行
             if segmented_proteins:
@@ -63,6 +94,7 @@ class ProteinSegmentationService:
                 event = ProteinSegmented(original_protein_id=protein.id, segmented_protein_ids=segmented_protein_ids)
                 # 最初のタンパク質にイベントを登録（他のタンパク質は既にProteinRegisteredイベントを持っている）
                 segmented_proteins[0]._register_domain_event(event)
+                self._report_progress("ドメインイベントを発行しました")
 
             return segmented_proteins
 
@@ -123,13 +155,13 @@ class ProteinSegmentationService:
         try:
             result = subprocess.run(command, cwd=str(cwd), check=True, capture_output=True, text=True)
             # デバッグ用に標準出力と標準エラー出力を表示
-            print(f"AlphaCutter stdout: {result.stdout}")
+            self._report_progress(f"AlphaCutter stdout: {result.stdout}")
             if result.stderr:
-                print(f"AlphaCutter stderr: {result.stderr}")
+                self._report_progress(f"AlphaCutter stderr: {result.stderr}")
         except subprocess.CalledProcessError as e:
-            print(f"AlphaCutter実行エラー: {e}")
-            print(f"stdout: {e.stdout}")
-            print(f"stderr: {e.stderr}")
+            self._report_progress(f"AlphaCutter実行エラー: {e}")
+            self._report_progress(f"stdout: {e.stdout}")
+            self._report_progress(f"stderr: {e.stderr}")
             raise
 
     def _collect_outputs(self, temp_dir: Path, final_output_dir: Path) -> List[Path]:
@@ -186,3 +218,29 @@ class ProteinSegmentationService:
             proteins.append(protein)
 
         return proteins
+
+    def get_segmentation_summary(self, segmented_proteins: List[Protein], original_protein: Protein) -> str:
+        """
+        セグメンテーション結果のサマリーを文字列として返す。
+
+        Args:
+            segmented_proteins: セグメンテーションされたタンパク質のリスト
+            original_protein: 元のタンパク質
+
+        Returns:
+            セグメンテーション結果のサマリー文字列
+        """
+        if not segmented_proteins:
+            return f"タンパク質 {original_protein.id} のセグメンテーション結果: セグメントなし"
+
+        summary = [
+            f"タンパク質 {original_protein.id} のセグメンテーション結果:",
+            f"元のタンパク質: {original_protein}",
+            f"セグメント数: {len(segmented_proteins)}個",
+            "セグメント一覧:",
+        ]
+
+        for i, seg_protein in enumerate(segmented_proteins, 1):
+            summary.append(f"  セグメント {i}: {seg_protein}")
+
+        return "\n".join(summary)

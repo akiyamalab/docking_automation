@@ -172,3 +172,21 @@ class Protein:
             "file_format": self.path.suffix.lstrip("."),
             "file_size": self.path.stat().st_size if self.path.exists() else 0,
         }
+
+    def __str__(self) -> str:
+        """
+        タンパク質の文字列表現を返す。
+
+        Returns:
+            タンパク質の文字列表現
+        """
+        return f"Protein: ID={self.id}, パス={self.path}"
+
+    def __repr__(self) -> str:
+        """
+        タンパク質の再現可能な文字列表現を返す。
+
+        Returns:
+            タンパク質の再現可能な文字列表現
+        """
+        return f"Protein(path='{self.path}', id='{self.id}')"

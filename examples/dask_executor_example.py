@@ -75,7 +75,7 @@ def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
 
     # Proteinオブジェクトの作成
     protein = Protein.create(path=protein_path)
-    print(f"入力タンパク質: ID={protein.id}, パス={protein.path}")
+    print(str(protein))
 
     # AlphaCutterのオプション設定
     options = {
@@ -90,14 +90,15 @@ def _segment_protein(protein_path: Path, output_dir: Path) -> list[Protein]:
     }
 
     # ProteinSegmentationServiceの作成と実行
-    service = ProteinSegmentationService()
-    print(f"タンパク質セグメンテーションを実行中...")
+    # 進捗状況を標準出力に表示するコールバック関数
+    def progress_callback(message: str):
+        print(message)
+
+    service = ProteinSegmentationService(progress_callback=progress_callback)
     segmented_proteins = service.segment(protein, options, output_dir)
 
     # 結果の表示
-    print(f"\nセグメンテーション完了: {len(segmented_proteins)}個のセグメントが生成されました。")
-    for i, seg_protein in enumerate(segmented_proteins, 1):
-        print(f"セグメント {i}: ID={seg_protein.id}, パス={seg_protein.path}")
+    print(service.get_segmentation_summary(segmented_proteins, protein))
 
     return segmented_proteins
 
@@ -128,7 +129,7 @@ def copy_protein_structure(protein: "Protein", output_dir: Path, name_prefix: st
 
     # ファイルをコピー
     shutil.copy2(protein.path, output_path)
-    print(f"タンパク質構造ファイルをコピーしました: {output_path}")
+    print(f"[Protein:{protein.id}] 構造ファイルをコピーしました: {output_path}")
 
     return output_path
 
@@ -161,7 +162,7 @@ def run_docking(
             if index_range is not None:
                 start_index = index_range["start"]
         except Exception as e:
-            print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
+            print(f"[Protein:{protein.id}] インデックス範囲の取得中にエラーが発生しました: {e}")
 
     # ドッキング計算を実行
     docking_tool = AutoDockVina()
@@ -244,8 +245,7 @@ def run_parallel_docking():
         grid_box = GridBox.from_fpocket(protein)
 
         # グリッドボックス情報の表示
-        print(f"  中心座標: X={grid_box.center[0]:.3f}, Y={grid_box.center[1]:.3f}, Z={grid_box.center[2]:.3f}")
-        print(f"  サイズ: X={grid_box.size[0]:.3f}, Y={grid_box.size[1]:.3f}, Z={grid_box.size[2]:.3f}")
+        print(str(grid_box))
 
         # グリッドボックスを保存
         grid_boxes[(protein_name, i)] = grid_box
@@ -317,15 +317,10 @@ def run_parallel_docking():
 
         print(f"\nタンパク質: {protein_name}, セグメント {segment_index + 1} ({protein.id}) の結果:")
         if grid_box:
-            print(
-                f"  ドッキング範囲: 中心座標=({grid_box.center[0]:.3f}, {grid_box.center[1]:.3f}, {grid_box.center[2]:.3f}), "
-                f"サイズ=({grid_box.size[0]:.3f}, {grid_box.size[1]:.3f}, {grid_box.size[2]:.3f})"
-            )
+            print(f"  ドッキング範囲: {str(grid_box)}")
 
-        print(f"  上位 {len(segment_top_hits)} 件のドッキング結果:")
-        for j, hit in enumerate(segment_top_hits):
-            scores = hit.metadata["scores"]
-            print(f"    全ポーズのスコア: {[float(s) for s in scores[0]]}")
+        # 上位ヒットの表示
+        print(data["results"].format_top_hits(5))
 
         # タンパク質・セグメントごとの結果をSDFファイルにエクスポート
         try:
@@ -336,7 +331,7 @@ def run_parallel_docking():
 
             # DockingResultCollectionのexport_to_sdfメソッドを直接呼び出す
             data["results"].export_to_sdf(sdf_path)
-            print(f"  ドッキング結果をSDFファイルにエクスポートしました: {sdf_path}")
+            # ログ出力はexport_to_sdfメソッド内で行われるため、ここでは不要
 
             # タンパク質構造ファイルをコピー
             try:
@@ -344,9 +339,9 @@ def run_parallel_docking():
                 protein_copy_path = copy_protein_structure(
                     protein=protein, output_dir=sdf_output_dir / "proteins", name_prefix=protein_segment_id
                 )
-                print(f"  タンパク質構造ファイルをコピーしました: {protein_copy_path}")
+                # ログ出力はcopy_protein_structure内で行われるため、ここでは不要
             except Exception as e:
-                print(f"  タンパク質構造ファイルのコピー中にエラーが発生しました: {e}")
+                print(f"[Protein:{protein.id}] 構造ファイルのコピー中にエラーが発生しました: {e}")
         except Exception as e:
             print(f"  SDFファイルへのエクスポート中にエラーが発生しました: {e}")
 
@@ -355,10 +350,15 @@ def run_parallel_docking():
     for data in protein_segment_results.values():
         combined_results.extend(data["results"])
 
+    # 統合結果のサマリーを表示
+    print("\n=== 全タンパク質・セグメント統合の結果 ===")
+    print(combined_results.summarize())
+
+    # 上位ヒットの詳細情報を表示
     top_hits = combined_results.get_top(10)  # 上位10件を表示
     print(f"\n=== 全タンパク質・セグメント統合の上位 {len(top_hits)} 件 ===")
+
     for j, hit in enumerate(top_hits):
-        scores = hit.metadata["scores"]
         # ヒットのタスクIDからタンパク質名とセグメント情報を取得
         task_id = hit.metadata.get("task_id", "unknown")
         protein_info = "不明"
@@ -387,12 +387,16 @@ def run_parallel_docking():
 
         grid_box = grid_boxes.get(grid_box_key) if grid_box_key else None
 
-        print(f"   タンパク質: {protein_info}, {segment_info} - 全ポーズのスコア: {[float(s) for s in scores[0]]}")
+        # スコア情報の表示
+        scores = hit.metadata.get("scores", [])
+        score_str = (
+            f"全ポーズのスコア: {[float(s) for s in scores[0]]}" if scores else f"スコア: {hit.docking_score:.3f}"
+        )
+        print(f"   {j+1}. タンパク質: {protein_info}, {segment_info} - {score_str}")
+
+        # グリッドボックス情報の表示
         if grid_box:
-            print(
-                f"     ドッキング範囲: 中心=({grid_box.center[0]:.3f}, {grid_box.center[1]:.3f}, {grid_box.center[2]:.3f}), "
-                f"サイズ=({grid_box.size[0]:.3f}, {grid_box.size[1]:.3f}, {grid_box.size[2]:.3f})"
-            )
+            print(f"     ドッキング範囲: {str(grid_box)}")
 
     # 永続化された結果の確認メッセージを表示
     print("\n=== 永続化されたドッキング結果 ===")

@@ -143,6 +143,57 @@ class DockingResultCollection:
             merged.add(result)
         return merged
 
+    def summarize(self) -> str:
+        """
+        コレクション内の結果のサマリーを文字列として返す。
+
+        Returns:
+            結果のサマリー文字列
+        """
+        if not self._results:
+            return "DockingResultCollection: 結果なし"
+
+        stats = self.get_statistics()
+        top_results = self.get_top(5)
+
+        summary = [
+            f"DockingResultCollection: {len(self._results)}件の結果",
+            f"スコア統計: 最小={stats['min_score']:.3f}, 最大={stats['max_score']:.3f}, 平均={stats['avg_score']:.3f}",
+            "上位5件の結果:",
+        ]
+
+        for i, result in enumerate(top_results):
+            summary.append(
+                f"  {i+1}. タンパク質ID={result.protein_id}, 化合物セットID={result.compound_set_id}, "
+                f"化合物インデックス={result.compound_index}, スコア={result.docking_score:.3f}"
+            )
+
+        return "\n".join(summary)
+
+    def format_top_hits(self, n: int = 5) -> str:
+        """
+        上位n件の結果をフォーマットした文字列を返す。
+
+        Args:
+            n: 表示する上位結果の数
+
+        Returns:
+            フォーマットされた上位結果の文字列
+        """
+        top_hits = self.get_top(n)
+        if not top_hits:
+            return "上位結果なし"
+
+        lines = [f"上位 {len(top_hits)} 件のドッキング結果:"]
+        for i, hit in enumerate(top_hits):
+            scores = hit.metadata.get("scores", [])
+            score_str = (
+                f"全ポーズのスコア: {[float(s) for s in scores[0]]}" if scores else f"スコア: {hit.docking_score:.3f}"
+            )
+            lines.append(f"  {i+1}. {score_str}")
+
+        return "\n".join(lines)
+
     def export_to_sdf(self, output_path: Path) -> None:
         """
         結果をSDFファイルにエクスポートする。
@@ -201,13 +252,31 @@ class DockingResultCollection:
                             writer.write(mol)
                             success_count += 1
                     except Exception as e:
-                        print(f"警告: 結果 {result.id} の処理中にエラーが発生しました: {e}")
+                        self._log_warning(f"結果 {result.id} の処理中にエラーが発生しました: {e}")
                         continue
 
             # 処理結果の概要を表示
-            print(f"SDFエクスポート完了: {success_count}/{processed_count} 件の結果を処理しました。")
+            self._log_info(f"SDFエクスポート完了: {success_count}/{processed_count} 件の結果を処理しました。")
         else:
-            print("警告: エクスポートする結果がありませんでした。")
+            self._log_warning("エクスポートする結果がありませんでした。")
+
+    def _log_info(self, message: str) -> None:
+        """
+        情報メッセージをログ出力する（内部使用）。
+
+        Args:
+            message: ログメッセージ
+        """
+        print(f"[DockingResultCollection] {message}")
+
+    def _log_warning(self, message: str) -> None:
+        """
+        警告メッセージをログ出力する（内部使用）。
+
+        Args:
+            message: 警告メッセージ
+        """
+        print(f"[DockingResultCollection] 警告: {message}")
 
     @classmethod
     def from_results(cls, results: List[DockingResult]) -> "DockingResultCollection":
