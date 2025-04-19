@@ -215,3 +215,86 @@ class TestCompoundSet:
         assert compound_set.path.exists()
         assert compound_set.path.suffix == ".sdf"
         assert compound_set.get_compound_count() == 0
+
+    @pytest.fixture
+    def create_test_compound(self, tmp_path):
+        """テスト用のCompoundSetインスタンスを作成する関数を返すフィクスチャ"""
+
+        def _create(file_name, compound_type="basic", id=None):
+            """
+            指定された化合物タイプのCompoundSetインスタンスを作成する
+
+            Args:
+                file_name: 作成するファイル名
+                compound_type: 化合物タイプ
+                    - "basic": 基本的な9原子の環状化合物
+                    - "modified": 基本化合物に追加情報を付加
+                id: CompoundSetインスタンスに設定するID (Noneの場合はファイル名から自動生成)
+
+            Returns:
+                作成されたCompoundSetインスタンス
+            """
+            # 基本的なSDFコンテンツ
+            basic_content = """
+        test_compound
+          RDKit
+        
+          9  9  0  0  0  0  0  0  0  0999 V2000
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+            0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+          1  2  1  0
+          2  3  1  0
+          3  4  1  0
+          4  5  1  0
+          5  6  1  0
+          6  7  1  0
+          7  8  1  0
+          8  9  1  0
+          9  1  1  0
+        M  END
+        $$$$
+            """
+
+            # 化合物タイプに応じてファイル内容を決定
+            if compound_type == "modified":
+                content = basic_content + "\ndifferent_content"
+            else:
+                content = basic_content
+
+            # ファイルを作成
+            sdf_path = tmp_path / file_name
+            sdf_path.write_text(content)
+
+            # CompoundSetインスタンスを作成して返す
+            if id is None:
+                # ファイル名から拡張子を除いた部分を取得
+                file_stem = Path(file_name).stem
+                id = f"test_{file_stem}"
+            return CompoundSet(path=sdf_path, id=id)
+
+        return _create
+
+    def test_content_hash(self, create_test_compound):
+        """ファイル内容に基づいたハッシュ値のテスト"""
+        # 同じ内容の2つのCompoundSetインスタンスを作成
+        compound_set1 = create_test_compound("test_compounds1.sdf", id="test1")
+        compound_set2 = create_test_compound("test_compounds2.sdf", id="test2")
+
+        # 同じ内容のファイルは同じハッシュ値を持つ
+        assert compound_set1.content_hash == compound_set2.content_hash
+
+        # ハッシュ値がプロパティに含まれていることを確認
+        properties = compound_set1.get_properties()
+        assert "content_hash" in properties
+        assert properties["content_hash"] == compound_set1.content_hash
+
+        # 内容が異なるファイルは異なるハッシュ値を持つ
+        compound_set3 = create_test_compound("test_compounds3.sdf", compound_type="modified", id="test3")
+        assert compound_set1.content_hash != compound_set3.content_hash

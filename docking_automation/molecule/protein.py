@@ -1,8 +1,12 @@
 import uuid
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from docking_automation.domain.domain_event import DomainEvent
+from docking_automation.infrastructure.utilities.file_utils import (
+    calculate_file_content_hash,
+)
 from docking_automation.molecule.protein_events import (
     ProteinPathUpdated,
     ProteinRegistered,
@@ -171,7 +175,20 @@ class Protein:
             "path": str(self.path),
             "file_format": self.path.suffix.lstrip("."),
             "file_size": self.path.stat().st_size if self.path.exists() else 0,
+            "content_hash": self.content_hash,  # ファイル内容のハッシュ値
         }
+
+    @cached_property
+    def content_hash(self) -> str:
+        """
+        ファイルの内容に基づいたハッシュ値を取得する。
+
+        初回アクセス時に計算し、その後はキャッシュした値を返す。
+
+        Returns:
+            ファイル内容のSHA-256ハッシュ値（16進数文字列）
+        """
+        return calculate_file_content_hash(self.path)
 
     def __str__(self) -> str:
         """

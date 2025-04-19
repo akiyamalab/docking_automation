@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -82,3 +83,33 @@ def count_compounds_in_sdf(filepath: str | Path) -> int:
         return count
     except Exception as e:
         raise ValueError(f"化合物数のカウント中にエラーが発生しました: {e}")
+
+
+def calculate_file_content_hash(filepath: str | Path) -> str:
+    """
+    ファイルの内容に基づいたハッシュ値を計算する。
+
+    SHA-256アルゴリズムを使用して、ファイルの内容からハッシュ値を生成する。
+
+    Args:
+        filepath: ハッシュ値を計算するファイルのパス
+
+    Returns:
+        str: ファイル内容のSHA-256ハッシュ値（16進数文字列）
+
+    Raises:
+        ValueError: ファイルが存在しない場合
+    """
+    filepath = expandpath(filepath)
+    if not Path(filepath).exists():
+        raise ValueError(f"指定されたパス '{filepath}' が存在しません")
+
+    sha256_hash = hashlib.sha256()
+
+    # ファイルを適切なモードで開く（バイナリモード）
+    with open(filepath, "rb") as f:
+        # 一度に読み込むバイト数を指定（大きなファイルでもメモリ効率が良い）
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+
+    return sha256_hash.hexdigest()

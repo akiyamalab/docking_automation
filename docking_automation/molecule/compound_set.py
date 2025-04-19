@@ -2,11 +2,13 @@ import os
 import shutil
 import tempfile
 import uuid
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from docking_automation.domain.domain_event import DomainEvent
 from docking_automation.infrastructure.utilities.file_utils import (
+    calculate_file_content_hash,
     count_compounds_in_sdf,
     read_compounds_from_sdf,
     safe_open,
@@ -483,6 +485,7 @@ class CompoundSet:
             "compound_count": len(
                 self
             ),  # __len__メソッドを使用して、インデックス範囲が設定されている場合はその範囲内の化合物の数を返す
+            "content_hash": self.content_hash,  # ファイル内容のハッシュ値
         }
 
         # インデックス範囲が設定されている場合は、その情報も含める
@@ -498,6 +501,17 @@ class CompoundSet:
         if hasattr(self, "_original_indices"):
             properties["original_indices"] = self._original_indices
             properties["original_compound_set_id"] = self._original_compound_set_id
-            properties["is_temp_file"] = True
 
         return properties
+
+    @cached_property
+    def content_hash(self) -> str:
+        """
+        ファイルの内容に基づいたハッシュ値を取得する。
+
+        初回アクセス時に計算し、その後はキャッシュした値を返す。
+
+        Returns:
+            ファイル内容のSHA-256ハッシュ値（16進数文字列）
+        """
+        return calculate_file_content_hash(self.path)
