@@ -141,14 +141,13 @@ def run_docking(
     """
     # CompoundSetのインデックス範囲を取得
     start_index = 0
-    if hasattr(compound_set, "get_properties"):
-        try:
-            properties = compound_set.get_properties()
-            index_range = properties.get("index_range")
-            if index_range is not None:
-                start_index = index_range["start"]
-        except Exception as e:
-            print(f"[Protein:{protein.id}] インデックス範囲の取得中にエラーが発生しました: {e}")
+    try:
+        properties = compound_set.get_properties()
+        index_range = properties.get("index_range")
+        if index_range is not None:
+            start_index = index_range["start"]
+    except Exception as e:
+        print(f"[Protein:{protein.id}] インデックス範囲の取得中にエラーが発生しました: {e}")
 
     # ドッキング計算を実行
     docking_tool = AutoDockVina()

@@ -168,19 +168,8 @@ class DaskExecutor(ExecutorABC):
 
                     # スケジューラ側で一元的に保存
                     # DockingResultCollectionの場合は各結果を個別に保存
-                    if hasattr(task_results, "__iter__") and not isinstance(task_results, str):
-                        for result in task_results:
-                            try:
-                                repository.save(result)
-                            except Exception as e:
-                                print(
-                                    f"警告: 結果の保存中にエラーが発生しました - "
-                                    f"タンパク質ID={result.protein_id if hasattr(result, 'protein_id') else 'unknown'}, "
-                                    f"化合物セットID={result.compound_set_id if hasattr(result, 'compound_set_id') else 'unknown'}, "
-                                    f"化合物インデックス={result.compound_index if hasattr(result, 'compound_index') else 'unknown'}, "
-                                    f"エラー: {e}"
-                                )
-
+                    for result in task_results:
+                        repository.save(result)
                     # 進捗バーを更新
                     pbar.update(1)
 

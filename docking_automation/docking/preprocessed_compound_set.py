@@ -1,5 +1,11 @@
+import hashlib
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from docking_automation.infrastructure.utilities.file_utils import (
+    calculate_file_content_hash,
+)
 
 
 # 値オブジェクト
@@ -41,3 +47,21 @@ class PreprocessedCompoundSet:
             properties["has_data"] = True
 
         return properties
+
+    @cached_property
+    def content_hash(self) -> str:
+        """
+        ファイルの内容に基づいたハッシュ値を取得する。
+
+        初回アクセス時に計算し、その後はキャッシュした値を返す。
+
+        Returns:
+            ファイル内容のSHA-256ハッシュ値（16進数文字列）
+        """
+        hashes = [calculate_file_content_hash(file_path) for file_path in self.file_paths]
+        # 複数のファイルのハッシュを結合して最終的なハッシュを計算
+        combined_hash = "".join(hashes)
+        sha256_hash = hashlib.sha256()
+        sha256_hash.update(combined_hash.encode("utf-8"))
+        combined_hash = sha256_hash.hexdigest()
+        return combined_hash

@@ -122,7 +122,7 @@ class DockingResult:
         """
         return self.metadata.get(key, default)
 
-    def get_original_index(self, compound_sets: List[CompoundSet]) -> int:
+    def get_original_index(self, compound_sets: List["CompoundSet"]) -> int:
         """
         元の化合物インデックスを計算する。
 
