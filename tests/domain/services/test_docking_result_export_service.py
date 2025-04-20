@@ -29,6 +29,8 @@ class TestDockingResultExportService:
             compound_set_id="set1",
             compound_index=0,
             docking_score=-8.5,
+            protein_content_hash="protein_hash_1",
+            compoundset_content_hash="compound_hash_1",
             metadata={"ligand_efficiency": 0.5},
         )
 
@@ -38,6 +40,8 @@ class TestDockingResultExportService:
             compound_set_id="set1",
             compound_index=1,
             docking_score=-7.2,
+            protein_content_hash="protein_hash_1",
+            compoundset_content_hash="compound_hash_1",
             metadata={"ligand_efficiency": 0.4},
         )
 
@@ -85,6 +89,8 @@ class TestDockingResultExportService:
             compound_set_id="set1",
             compound_index=0,
             docking_score=-8.5,
+            protein_content_hash="protein_hash_1",
+            compoundset_content_hash="compound_hash_1",
         )
 
         # DockingResultCollectionを作成

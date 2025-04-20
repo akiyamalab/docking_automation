@@ -19,6 +19,8 @@ class TestDockingResult:
             compound_set_id="compounds1",
             compound_index=0,
             docking_score=-8.5,
+            protein_content_hash="protein_hash_1",
+            compoundset_content_hash="compound_hash_1",
             metadata={"tool": "AutoDock Vina"},
         )
 
@@ -29,6 +31,8 @@ class TestDockingResult:
         assert sample_result.compound_set_id == "compounds1"
         assert sample_result.compound_index == 0
         assert sample_result.docking_score == -8.5
+        assert sample_result.protein_content_hash == "protein_hash_1"
+        assert sample_result.compoundset_content_hash == "compound_hash_1"
         assert sample_result.metadata == {"tool": "AutoDock Vina"}
         assert sample_result.id.startswith("protein1_compounds1_0_")
         assert sample_result.version == 1
@@ -73,6 +77,8 @@ class TestDockingResult:
         assert new_result.compound_set_id == sample_result.compound_set_id
         assert new_result.compound_index == sample_result.compound_index
         assert new_result.docking_score == sample_result.docking_score
+        assert new_result.protein_content_hash == sample_result.protein_content_hash
+        assert new_result.compoundset_content_hash == sample_result.compoundset_content_hash
         assert new_result.result_path == sample_result.result_path
 
     def test_domain_events(self, sample_result):
@@ -128,6 +134,8 @@ class TestDockingResult:
         assert new_result.compound_set_id == sample_result.compound_set_id
         assert new_result.compound_index == sample_result.compound_index
         assert new_result.docking_score == sample_result.docking_score
+        assert new_result.protein_content_hash == sample_result.protein_content_hash
+        assert new_result.compoundset_content_hash == sample_result.compoundset_content_hash
         assert new_result.result_path == sample_result.result_path
         assert new_result.metadata == sample_result.metadata
 
@@ -142,6 +150,8 @@ class TestDockingResult:
             compound_set_id="compounds2",
             compound_index=1,
             docking_score=-7.5,
+            protein_content_hash="protein_hash_2",
+            compoundset_content_hash="compound_hash_2",
             id=sample_result.id,
         )
         assert sample_result == another_result
@@ -153,6 +163,8 @@ class TestDockingResult:
             compound_set_id="compounds2",
             compound_index=1,
             docking_score=-7.5,
+            protein_content_hash="protein_hash_2",
+            compoundset_content_hash="compound_hash_2",
         )
         assert sample_result != different_result
 
@@ -167,6 +179,8 @@ class TestDockingResult:
             compound_set_id="compounds2",
             compound_index=1,
             docking_score=-7.5,
+            protein_content_hash="protein_hash_2",
+            compoundset_content_hash="compound_hash_2",
             id=sample_result.id,
         )
         assert hash(sample_result) == hash(another_result)
@@ -178,6 +192,8 @@ class TestDockingResult:
             compound_set_id="compounds2",
             compound_index=1,
             docking_score=-7.5,
+            protein_content_hash="protein_hash_2",
+            compoundset_content_hash="compound_hash_2",
         )
         assert hash(sample_result) != hash(different_result)
 
@@ -254,6 +270,8 @@ class TestDockingResult:
             compound_set_id="compounds_factory",
             compound_index=5,
             docking_score=-9.0,
+            protein_content_hash="protein_hash_factory",
+            compoundset_content_hash="compound_hash_factory",
             metadata={"factory": True},
             id="custom_id",
         )
@@ -263,6 +281,8 @@ class TestDockingResult:
         assert result.compound_set_id == "compounds_factory"
         assert result.compound_index == 5
         assert result.docking_score == -9.0
+        assert result.protein_content_hash == "protein_hash_factory"
+        assert result.compoundset_content_hash == "compound_hash_factory"
         assert result.metadata == {"factory": True}
         assert result.id == "custom_id"
         assert result.version == 1

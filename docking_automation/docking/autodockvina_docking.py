@@ -18,7 +18,7 @@ class VinaProtocol(Protocol):
     def energies(self) -> npt.NDArray[np.float64]: ...
 
 
-from vina import Vina  # type: ignore[import-untyped]
+from vina import Vina
 
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
@@ -43,8 +43,8 @@ class AutoDockVinaParameters(SpecificDockingParametersABC):
         num_modes: int = 9,
         seed: Optional[int] = None,
         max_compounds: Optional[int] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         AutoDockVinaParametersオブジェクトを初期化する。
 
@@ -76,7 +76,7 @@ class AutoDockVina(DockingToolABC):
     AutoDock Vina を使ったドッキング計算を行うクラス。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         AutoDockVinaオブジェクトを初期化する。
         """
@@ -144,13 +144,13 @@ class AutoDockVina(DockingToolABC):
 
         # 前処理済みのタンパク質と化合物セット
         protein = common_params.protein
-        compound_set: Union[CompoundSet, PreprocessedCompoundSet] = common_params.compound_set  # type: ignore[assignment]
+        compound_set: Union[CompoundSet, PreprocessedCompoundSet] = common_params.compound_set
         grid_box = common_params.grid_box
 
         # ファイルパスを取得
         if not protein.file_paths:
             raise ValueError("タンパク質のファイルパスが指定されていません。")
-        if not hasattr(compound_set, "file_paths") or not compound_set.file_paths:  # type: ignore[attr-defined]
+        if not hasattr(compound_set, "file_paths") or not compound_set.file_paths:
             raise ValueError("化合物セットのファイルパスが指定されていません。")
 
         # 一時ディレクトリを作成
@@ -181,15 +181,15 @@ class AutoDockVina(DockingToolABC):
                 print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
 
         # 化合物の数を取得（各タスクで処理する化合物数）
-        task_compounds = len(compound_set.file_paths)  # type: ignore[attr-defined]
+        task_compounds = len(compound_set.file_paths)
 
         # 処理する化合物の数を決定
         if max_compounds is not None and max_compounds > 0 and max_compounds < task_compounds:
-            compounds_to_process = compound_set.file_paths[:max_compounds]  # type: ignore[attr-defined]
+            compounds_to_process = compound_set.file_paths[:max_compounds]
             if verbose:
                 print(f"ドッキング計算を開始します（全{task_compounds}化合物中、最初の{max_compounds}化合物）...")
         else:
-            compounds_to_process = compound_set.file_paths  # type: ignore[attr-defined]
+            compounds_to_process = compound_set.file_paths
             if verbose:
                 print(f"ドッキング計算を開始します（全{task_compounds}化合物）...")
 
@@ -247,6 +247,8 @@ class AutoDockVina(DockingToolABC):
                     compound_set_id=compound_path.stem.split("_")[0],  # 化合物セットID（ファイル名から抽出）
                     compound_index=start_index + idx,  # 実際の化合物インデックス（インデックス範囲を考慮）
                     docking_score=scores[0, 0],
+                    protein_content_hash=protein.content_hash,
+                    compoundset_content_hash=compound_set.content_hash,
                     metadata=metadata,
                 )
 

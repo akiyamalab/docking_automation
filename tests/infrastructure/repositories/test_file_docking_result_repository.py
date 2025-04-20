@@ -79,6 +79,8 @@ END
         compound_set_id="compound_set1",
         compound_index=0,
         docking_score=-8.5,
+        protein_content_hash="protein_hash_1",
+        compoundset_content_hash="compound_hash_1",
         metadata={
             "compound_name": "Compound_1",
             "binding_mode": "active",
@@ -100,7 +102,7 @@ def sample_results() -> Generator[list[DockingResult], None, None]:
     Yields:
         サンプルのドッキング結果のリスト
     """
-    temp_files = []
+    temp_file_paths = []
     results = []
 
     # サンプルデータ
@@ -115,7 +117,8 @@ def sample_results() -> Generator[list[DockingResult], None, None]:
     for protein_id, compound_set_id, compound_index, docking_score in sample_data:
         # 一時ファイルを作成
         temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w", suffix=".sdf")
-        temp_files.append(temp_file.name)
+        temp_file_path = temp_file.name
+        temp_file_paths.append(temp_file_path)
 
         # サンプルのSDFデータを書き込む
         temp_file.write(
@@ -143,6 +146,8 @@ END
             compound_set_id=compound_set_id,
             compound_index=compound_index,
             docking_score=docking_score,
+            protein_content_hash=f"protein_hash_{protein_id}",
+            compoundset_content_hash=f"compound_hash_{compound_set_id}",
             metadata={
                 "compound_name": f"Compound_{compound_set_id}_{compound_index}",
                 "binding_mode": "active",
@@ -155,8 +160,8 @@ END
     yield results
 
     # 一時ファイルを削除
-    for temp_file in temp_files:
-        os.unlink(temp_file)
+    for temp_file_path in temp_file_paths:
+        os.unlink(temp_file_path)
 
 
 class TestFileDockingResultRepository:

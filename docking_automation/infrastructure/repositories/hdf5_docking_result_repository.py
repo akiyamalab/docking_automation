@@ -1,9 +1,8 @@
-# mypy: ignore-errors
 import json  # metadataのシリアライズ/デシリアライズ用
 import logging
 import time  # リトライのためのsleep用
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Union
 
 import h5py
 from filelock import FileLock, Timeout  # Timeout例外をインポート
@@ -29,7 +28,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
         mode (str): 保存モード。"overwrite"（上書き）または"append"（追記）。
     """
 
-    def __init__(self, hdf5_file_path: str | Path, mode: str = "overwrite"):
+    def __init__(self, hdf5_file_path: Union[str, Path], mode: str = "overwrite") -> None:
         """リポジトリを初期化します。
 
         Args:
@@ -51,28 +50,43 @@ class HDF5DockingResultRepository(DockingResultRepository):
             f"ロックファイル: {self.lock_file_path}, モード: {self.mode}"
         )
 
-    def _ensure_directory_exists(self):
+    def _ensure_directory_exists(self) -> None:
         """HDF5ファイルとロックファイルが存在するディレクトリを確認し、なければ作成します。"""
         self.hdf5_file_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock_file_path.parent.mkdir(parents=True, exist_ok=True)  # 通常は同じディレクトリ
 
-    def _exists(self, protein_id: str, compound_set_id: str, compound_index: int) -> bool:
+    def _exists(
+        self,
+        protein_id: str,
+        compound_set_id: str,
+        compound_index: int,
+        protein_content_hash: str,
+        compoundset_content_hash: str,
+    ) -> bool:
         """指定されたキーのデータが既に存在するかどうかを確認します。
 
         Args:
             protein_id (str): タンパク質ID。
             compound_set_id (str): 化合物セットID。
             compound_index (int): 化合物インデックス。
+            protein_content_hash (str): タンパク質ファイルの内容ハッシュ値。
+            compoundset_content_hash (str): 化合物セットファイルの内容ハッシュ値。
 
         Returns:
             bool: データが存在する場合はTrue、存在しない場合はFalse。
+
+        Notes:
+            TODO: protein_id, compound_set_id は現在使われていないので、関数の引数から削除可能
         """
         if not self.hdf5_file_path.exists():
             return False
 
         try:
             with h5py.File(self.hdf5_file_path, "r") as f:
-                group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
+                group_path = (
+                    f"/results/protein_{protein_content_hash}/compoundset_{compoundset_content_hash}/{compound_index}"
+                )
+                # TODO: パス作成は多数の場所で共通なので、関数化して使い回す
                 return group_path in f
         except Exception as e:
             logger.error(f"データの存在確認中にエラーが発生しました: {e}", exc_info=True)
@@ -96,11 +110,15 @@ class HDF5DockingResultRepository(DockingResultRepository):
 
         # 追記モードで、既にデータが存在する場合はスキップ
         if self.mode == "append" and self._exists(
-            docking_result.protein_id, docking_result.compound_set_id, docking_result.compound_index
+            docking_result.protein_id,
+            docking_result.compound_set_id,
+            docking_result.compound_index,
+            docking_result.protein_content_hash,
+            docking_result.compoundset_content_hash,
         ):
             logger.info(
                 f"追記モード: 既存のデータが存在するためスキップします: "
-                f"{docking_result.protein_id}/{docking_result.compound_set_id}/{docking_result.compound_index}"
+                f"protein_{docking_result.protein_content_hash}/compoundset_{docking_result.compoundset_content_hash}/{docking_result.compound_index}"
             )
             return
 
@@ -110,8 +128,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
                 with lock.acquire(timeout=10):
                     logger.debug(f"ロック取得成功 (試行 {attempt + 1}/{max_retries}): {self.lock_file_path}")
                     with h5py.File(self.hdf5_file_path, "a") as f:
-                        # グループパス: /results/{protein_id}/{compound_set_id}/{compound_index}
-                        group_path = f"/results/{docking_result.protein_id}/{docking_result.compound_set_id}/{docking_result.compound_index}"
+                        # グループパス: /results/protein_{protein_content_hash}/compoundset_{compoundset_content_hash}/{compound_index}
+                        group_path = f"/results/protein_{docking_result.protein_content_hash}/compoundset_{docking_result.compoundset_content_hash}/{docking_result.compound_index}"
 
                         # 上書きモードの場合、既存のグループを削除
                         if self.mode == "overwrite" and group_path in f:
@@ -210,13 +228,42 @@ class HDF5DockingResultRepository(DockingResultRepository):
             with lock.acquire(timeout=60):
                 logger.debug(f"ロック取得 (読み込み): {self.lock_file_path}")
                 with h5py.File(self.hdf5_file_path, "r") as f:
-                    # グループパスを構築
-                    group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
-                    if group_path not in f:
-                        logger.debug(f"指定された結果が見つかりません: {group_path}")
-                        return None
+                    # 新しいパス形式で検索
+                    found_group = None
 
-                    group = f[group_path]
+                    if "results" in f:
+                        results_group = f["results"]
+                        # 全てのprotein_*グループを検索
+                        for protein_group_name in results_group:
+                            protein_group = results_group[protein_group_name]
+                            # 全てのcompoundset_*グループを検索
+                            for compound_set_group_name in protein_group:
+                                compound_set_group = protein_group[compound_set_group_name]
+                                # 指定されたインデックスを持つグループを検索
+                                if str(compound_index) in compound_set_group:
+                                    compound_group = compound_set_group[str(compound_index)]
+                                    # 属性を確認
+                                    if (
+                                        compound_group.attrs["protein_id"] == protein_id
+                                        and compound_group.attrs["compound_set_id"] == compound_set_id
+                                    ):
+                                        found_group = compound_group
+                                        break
+
+                            if found_group is not None:
+                                break
+
+                    # 見つからなかった場合は従来のパス形式で検索
+                    # TODO: この書き換えを行った時点ではこのコードは他人に利用されていないので、後方互換性は不要
+                    if found_group is None:
+                        old_group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
+                        if old_group_path in f:
+                            found_group = f[old_group_path]
+                        else:
+                            logger.debug(f"指定された結果が見つかりません: {old_group_path}")
+                            return None
+
+                    group = found_group
 
                     # データセットと属性から値を取得
                     docking_score = group["docking_score"][()]
@@ -227,12 +274,29 @@ class HDF5DockingResultRepository(DockingResultRepository):
                     version = group.attrs["version"]
 
                     # DockingResultオブジェクトを再構築
+                    # protein_content_hashとcompoundset_content_hashを取得
+                    # グループパスから抽出するか、デフォルト値を使用
+                    group_path = group.name
+                    parts = group_path.split("/")
+
+                    # パスから抽出を試みる
+                    protein_content_hash = "default_protein_hash"
+                    compoundset_content_hash = "default_compound_hash"
+
+                    for part in parts:
+                        if part.startswith("protein_"):
+                            protein_content_hash = part.replace("protein_", "")
+                        elif part.startswith("compoundset_"):
+                            compoundset_content_hash = part.replace("compoundset_", "")
+
                     result = DockingResult(
                         result_path=Path(result_path_str),
                         protein_id=group.attrs["protein_id"],
                         compound_set_id=group.attrs["compound_set_id"],
                         compound_index=group.attrs["compound_index"],
                         docking_score=docking_score,
+                        protein_content_hash=protein_content_hash,
+                        compoundset_content_hash=compoundset_content_hash,
                         metadata=metadata,
                         id=result_id,
                         version=version,
@@ -272,10 +336,10 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         return DockingResultCollection(results)
 
                     results_group = f["results"]
-                    for protein_id in results_group:
-                        protein_group = results_group[protein_id]
-                        for compound_set_id in protein_group:
-                            compound_set_group = protein_group[compound_set_id]
+                    for protein_group_name in results_group:
+                        protein_group = results_group[protein_group_name]
+                        for compound_set_group_name in protein_group:
+                            compound_set_group = protein_group[compound_set_group_name]
                             for compound_index_str in compound_set_group:  # インデックスは文字列キーになっている
                                 compound_group = compound_set_group[compound_index_str]
 
@@ -289,12 +353,29 @@ class HDF5DockingResultRepository(DockingResultRepository):
                                 version = compound_group.attrs["version"]
 
                                 # DockingResultオブジェクトを再構築
+                                # protein_content_hashとcompoundset_content_hashを取得
+                                # グループパスから抽出するか、デフォルト値を使用
+                                group_path = compound_group.name
+                                parts = group_path.split("/")
+
+                                # パスから抽出を試みる
+                                protein_content_hash = "default_protein_hash"
+                                compoundset_content_hash = "default_compound_hash"
+
+                                for part in parts:
+                                    if part.startswith("protein_"):
+                                        protein_content_hash = part.replace("protein_", "")
+                                    elif part.startswith("compoundset_"):
+                                        compoundset_content_hash = part.replace("compoundset_", "")
+
                                 result = DockingResult(
                                     result_path=Path(result_path_str),
                                     protein_id=compound_group.attrs["protein_id"],
                                     compound_set_id=compound_group.attrs["compound_set_id"],
                                     compound_index=compound_group.attrs["compound_index"],  # 属性から取得
                                     docking_score=docking_score,
+                                    protein_content_hash=protein_content_hash,
+                                    compoundset_content_hash=compoundset_content_hash,
                                     metadata=metadata,
                                     id=result_id,
                                     version=version,
@@ -328,8 +409,40 @@ class HDF5DockingResultRepository(DockingResultRepository):
             with lock.acquire(timeout=60):
                 logger.debug(f"ロック取得 (削除): {self.lock_file_path}")
                 with h5py.File(self.hdf5_file_path, "a") as f:  # 書き込みモードで開く
-                    # グループパスを修正
-                    group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
+                    # 新しいパス形式と従来のパス形式の両方を試す
+                    # まず新しいパス形式で検索
+                    found = False
+                    group_path = ""
+
+                    if "results" in f:
+                        results_group = f["results"]
+                        for protein_group_name in results_group:
+                            if not protein_group_name.startswith("protein_"):
+                                continue
+
+                            protein_group = results_group[protein_group_name]
+                            for compound_set_group_name in protein_group:
+                                if not compound_set_group_name.startswith("compoundset_"):
+                                    continue
+
+                                compound_set_group = protein_group[compound_set_group_name]
+                                if str(compound_index) in compound_set_group:
+                                    # 属性を確認
+                                    compound_group = compound_set_group[str(compound_index)]
+                                    if (
+                                        compound_group.attrs["protein_id"] == protein_id
+                                        and compound_group.attrs["compound_set_id"] == compound_set_id
+                                    ):
+                                        group_path = compound_group.name
+                                        found = True
+                                        break
+
+                            if found:
+                                break
+
+                    # 見つからなかった場合は従来のパス形式で検索
+                    if not found:
+                        group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
                     if group_path in f:
                         del f[group_path]
                         logger.info(f"ドッキング結果を削除しました: {group_path}")
@@ -337,15 +450,17 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         logger.warning(f"削除対象の結果が見つかりません: {group_path}")
 
                     # 親グループが空になったら削除する (任意)
-                    compound_set_group_path = f"/results/{protein_id}/{compound_set_id}"
-                    if compound_set_group_path in f and not list(f[compound_set_group_path].keys()):
-                        del f[compound_set_group_path]
-                        logger.debug(f"空の化合物セットグループを削除しました: {compound_set_group_path}")
+                    # 親グループのパスを取得
+                    parent_path = "/".join(group_path.split("/")[:-1])
+                    if parent_path in f and not list(f[parent_path].keys()):
+                        del f[parent_path]
+                        logger.debug(f"空の親グループを削除しました: {parent_path}")
 
-                    protein_group_path = f"/results/{protein_id}"
-                    if protein_group_path in f and not list(f[protein_group_path].keys()):
-                        del f[protein_group_path]
-                        logger.debug(f"空のタパク質グループを削除しました: {protein_group_path}")
+                    # 祖父グループのパスを取得
+                    grandparent_path = "/".join(parent_path.split("/")[:-1])
+                    if grandparent_path in f and not list(f[grandparent_path].keys()):
+                        del f[grandparent_path]
+                        logger.debug(f"空の祖父グループを削除しました: {grandparent_path}")
                     if "/results" in f and not list(f["/results"].keys()):
                         del f["/results"]
                         logger.debug("空の結果グループを削除しました: /results")

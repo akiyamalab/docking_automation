@@ -30,6 +30,8 @@ class TestDockingResultCollection:
                         compound_set_id=f"compound_set{compound_set_idx}",
                         compound_index=compound_idx,
                         docking_score=score,
+                        protein_content_hash=f"protein_hash_{protein_idx}",
+                        compoundset_content_hash=f"compound_hash_{compound_set_idx}",
                         metadata={"score": score},
                     )
                     results.append(result)
@@ -58,6 +60,8 @@ class TestDockingResultCollection:
                 compound_set_id="compounds1",
                 compound_index=0,
                 docking_score=-8.5,
+                protein_content_hash="protein_hash_test",
+                compoundset_content_hash="compound_hash_test",
             ),
             DockingResult(
                 result_path=Path("/tmp/result2.sdf"),
@@ -65,6 +69,8 @@ class TestDockingResultCollection:
                 compound_set_id="compounds1",
                 compound_index=1,
                 docking_score=-7.5,
+                protein_content_hash="protein_hash_test",
+                compoundset_content_hash="compound_hash_test",
             ),
         ]
         collection_with_results = DockingResultCollection(results)

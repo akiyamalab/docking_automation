@@ -38,6 +38,8 @@ def sample_result1(tmp_path: Path) -> DockingResult:
         compound_set_id="set1",
         compound_index=0,
         docking_score=-9.5,
+        protein_content_hash="protein_hash_1",
+        compoundset_content_hash="compound_hash_1",
         metadata={"pose_data": "pose data for compound1"},  # pose_dataをmetadataに含める
     )  # 閉じ括弧を追加
 
@@ -53,6 +55,8 @@ def sample_result2(tmp_path: Path) -> DockingResult:
         compound_set_id="set1",
         compound_index=1,  # 異なるインデックス
         docking_score=-8.0,
+        protein_content_hash="protein_hash_1",
+        compoundset_content_hash="compound_hash_1",
         metadata={"pose_data": "pose data for compound2"},
     )  # 閉じ括弧を追加
 
@@ -68,6 +72,8 @@ def sample_result3(tmp_path: Path) -> DockingResult:
         compound_set_id="set2",  # 異なるセットID
         compound_index=0,
         docking_score=-10.0,
+        protein_content_hash="protein_hash_2",
+        compoundset_content_hash="compound_hash_2",
         metadata={"pose_data": "pose data for compound3"},
     )
 
@@ -122,6 +128,8 @@ class TestHDF5DockingResultRepository:
             compound_set_id=sample_result1.compound_set_id,
             compound_index=sample_result1.compound_index,
             docking_score=-10.0,  # スコア更新
+            protein_content_hash=sample_result1.protein_content_hash,
+            compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated pose data"},  # メタデータ更新
         )
         hdf5_repo.save(updated_result)
@@ -192,12 +200,8 @@ class TestHDF5DockingResultRepository:
 
         # HDF5ファイル内部のグループが削除されているか確認 (オプション)
         # グループパスを修正
-        group_path1 = (
-            f"/results/{sample_result1.protein_id}/{sample_result1.compound_set_id}/{sample_result1.compound_index}"
-        )
-        group_path2 = (
-            f"/results/{sample_result2.protein_id}/{sample_result2.compound_set_id}/{sample_result2.compound_index}"
-        )
+        group_path1 = f"/results/protein_{sample_result1.protein_content_hash}/compoundset_{sample_result1.compoundset_content_hash}/{sample_result1.compound_index}"
+        group_path2 = f"/results/protein_{sample_result2.protein_content_hash}/compoundset_{sample_result2.compoundset_content_hash}/{sample_result2.compound_index}"
         with h5py.File(hdf5_repo.hdf5_file_path, "r") as f:
             assert group_path1 not in f
             assert group_path2 in f
@@ -223,6 +227,8 @@ class TestHDF5DockingResultRepository:
             compound_set_id=sample_result1.compound_set_id,
             compound_index=sample_result1.compound_index,
             docking_score=-11.0,
+            protein_content_hash=sample_result1.protein_content_hash,
+            compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated via update method"},
         )
         hdf5_repo.update(updated_result)  # updateは内部でsaveを呼ぶ
@@ -270,6 +276,8 @@ class TestHDF5DockingResultRepository:
             compound_set_id=sample_result1.compound_set_id,
             compound_index=sample_result1.compound_index,
             docking_score=-10.0,  # 異なるスコア
+            protein_content_hash=sample_result1.protein_content_hash,
+            compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated pose data"},  # 異なるメタデータ
         )
 
@@ -301,6 +309,8 @@ class TestHDF5DockingResultRepository:
             compound_set_id=sample_result1.compound_set_id,
             compound_index=sample_result1.compound_index,
             docking_score=-11.0,  # 異なるスコア
+            protein_content_hash=sample_result1.protein_content_hash,
+            compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated via update method"},  # 異なるメタデータ
         )
 
@@ -365,12 +375,8 @@ def _save_task_func(repo_path: Path, result: DockingResult, delay: float = 0, mo
 
         # ファイルが破損していないか基本的なチェック
         # グループパスを修正
-        group_path1 = (
-            f"/results/{sample_result1.protein_id}/{sample_result1.compound_set_id}/{sample_result1.compound_index}"
-        )
-        group_path2 = (
-            f"/results/{sample_result2.protein_id}/{sample_result2.compound_set_id}/{sample_result2.compound_index}"
-        )
+        group_path1 = f"/results/protein_{sample_result1.protein_content_hash}/compoundset_{sample_result1.compoundset_content_hash}/{sample_result1.compound_index}"
+        group_path2 = f"/results/protein_{sample_result2.protein_content_hash}/compoundset_{sample_result2.compoundset_content_hash}/{sample_result2.compound_index}"
         try:
             with h5py.File(hdf5_file, "r") as f:
                 assert group_path1 in f

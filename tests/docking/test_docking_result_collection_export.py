@@ -55,6 +55,8 @@ class TestDockingResultCollectionExport:
             compound_set_id="set1",
             compound_index=0,
             docking_score=-8.5,
+            protein_content_hash="protein_hash_export",
+            compoundset_content_hash="compound_hash_export",
             metadata={"ligand_efficiency": 0.5},
         )
 
@@ -64,6 +66,8 @@ class TestDockingResultCollectionExport:
             compound_set_id="set1",
             compound_index=1,
             docking_score=-7.2,
+            protein_content_hash="protein_hash_export",
+            compoundset_content_hash="compound_hash_export",
             metadata={"ligand_efficiency": 0.4},
         )
 

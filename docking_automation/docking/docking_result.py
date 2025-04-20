@@ -1,6 +1,9 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+
+if TYPE_CHECKING:
+    from ..molecule.compound_set import CompoundSet
 
 from docking_automation.domain.domain_event import DomainEvent
 
@@ -29,10 +32,12 @@ class DockingResult:
         compound_set_id: str,
         compound_index: int,
         docking_score: float,
+        protein_content_hash: str,
+        compoundset_content_hash: str,
         metadata: Optional[Dict[str, Any]] = None,
         id: Optional[str] = None,
         version: int = 1,
-    ):
+    ) -> None:
         """
         DockingResultオブジェクトを初期化する。
 
@@ -42,27 +47,20 @@ class DockingResult:
             compound_set_id: 化合物セットのID
             compound_index: 化合物セット内の化合物のインデックス
             docking_score: ドッキングスコア
+            protein_content_hash: タンパク質ファイルの内容ハッシュ値
+            compoundset_content_hash: 化合物セットファイルの内容ハッシュ値
             metadata: メタデータ
             id: 結果のID（指定しない場合は自動生成）
             version: 結果のバージョン（楽観的ロックのために使用）
         """
-        # 不変条件のバリデーション
-        if not isinstance(result_path, Path):
-            raise ValueError("result_pathはPathオブジェクトである必要があります")
-        if not protein_id:
-            raise ValueError("protein_idは空であってはなりません")
-        if not compound_set_id:
-            raise ValueError("compound_set_idは空であってはなりません")
-        if compound_index < 0:
-            raise ValueError("compound_indexは0以上である必要があります")
-        if version < 1:
-            raise ValueError("versionは1以上である必要があります")
 
         self.result_path = result_path
         self.protein_id = protein_id
         self.compound_set_id = compound_set_id
         self.compound_index = compound_index
         self.docking_score = docking_score
+        self.protein_content_hash = protein_content_hash
+        self.compoundset_content_hash = compoundset_content_hash
         self.metadata = metadata or {}
         self.id = id or f"{protein_id}_{compound_set_id}_{compound_index}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         self.version = version
@@ -124,7 +122,7 @@ class DockingResult:
         """
         return self.metadata.get(key, default)
 
-    def get_original_index(self, compound_sets: List[Any]) -> int:
+    def get_original_index(self, compound_sets: List[CompoundSet]) -> int:
         """
         元の化合物インデックスを計算する。
 
@@ -217,7 +215,11 @@ class DockingResult:
             compound_set_id=self.compound_set_id,
             compound_index=self.compound_index,
             docking_score=self.docking_score,
+            protein_content_hash=self.protein_content_hash,
+            compoundset_content_hash=self.compoundset_content_hash,
             metadata=new_metadata,
+            id=self.id,
+            version=self.version,
         )
 
     @classmethod
@@ -228,6 +230,8 @@ class DockingResult:
         compound_set_id: str,
         compound_index: int,
         docking_score: float,
+        protein_content_hash: str,
+        compoundset_content_hash: str,
         metadata: Optional[Dict[str, Any]] = None,
         id: Optional[str] = None,
     ) -> "DockingResult":
@@ -241,6 +245,8 @@ class DockingResult:
             compound_set_id: 化合物セットのID
             compound_index: 化合物セット内の化合物のインデックス
             docking_score: ドッキングスコア
+            protein_content_hash: タンパク質ファイルの内容ハッシュ値
+            compoundset_content_hash: 化合物セットファイルの内容ハッシュ値
             metadata: メタデータ
             id: 結果のID（指定しない場合は自動生成）
 
@@ -254,6 +260,8 @@ class DockingResult:
             compound_set_id=compound_set_id,
             compound_index=compound_index,
             docking_score=docking_score,
+            protein_content_hash=protein_content_hash,
+            compoundset_content_hash=compoundset_content_hash,
             metadata=metadata,
             id=id,
             version=1,  # 新規作成時はバージョン1
@@ -310,6 +318,8 @@ class DockingResult:
             compound_set_id=self.compound_set_id,
             compound_index=self.compound_index,
             docking_score=self.docking_score,
+            protein_content_hash=self.protein_content_hash,
+            compoundset_content_hash=self.compoundset_content_hash,
             metadata=self.metadata.copy(),
             id=self.id,
             version=self.version,
@@ -338,6 +348,8 @@ class DockingResult:
             compound_set_id=self.compound_set_id,
             compound_index=self.compound_index,
             docking_score=self.docking_score,
+            protein_content_hash=self.protein_content_hash,
+            compoundset_content_hash=self.compoundset_content_hash,
             metadata=self.metadata.copy(),
             id=self.id,
             version=self.version + 1,
