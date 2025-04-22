@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import tempfile
@@ -48,6 +49,7 @@ class CompoundSet:
         self.__domain_events: List[DomainEvent] = []
         self.__index_range: Optional[Tuple[int, int]] = None  # インデックス範囲（開始、終了）
         self.__compound_count: Optional[int] = None  # 化合物数のキャッシュ
+        self.__compound_hash_cache: Dict[int, str] = {}  # インデックス -> 化合物ハッシュ値のキャッシュ
 
         # 一時ファイル関連の属性（デフォルトではNone）
         # これらの属性は分割時に設定される
@@ -58,6 +60,9 @@ class CompoundSet:
         # 不変条件の検証
         if not self.__path.exists():
             raise ValueError(f"指定されたパス '{self.__path}' が存在しません")
+
+        # 初期化時にすべての化合物のハッシュ値を計算
+        self._calculate_all_compound_hashes()
 
     @property
     def path(self) -> Path:
@@ -220,6 +225,8 @@ class CompoundSet:
 
         try:
             # SDFファイルから化合物データを読み込む
+            # TODO: このやり方だと一旦ファイルを全て読み込み保存する必要があり、メモリを圧迫する可能性がある
+            #       代わりに、ファイルをストリームとして読み込む方法を検討すべき
             compound_data = list(read_compounds_from_sdf(self.path))
 
             # チャンクごとに一時ファイルを作成（各チャンクは独自の一時ディレクトリを持つ）
@@ -503,6 +510,31 @@ class CompoundSet:
             properties["original_compound_set_id"] = self._original_compound_set_id
 
         return properties
+
+    def _calculate_all_compound_hashes(self) -> None:
+        """すべての化合物のハッシュ値を計算してキャッシュする"""
+        for i, (idx, compound_lines) in enumerate(read_compounds_from_sdf(self.path)):
+            # 化合物のテキスト表現からハッシュ値を計算
+            content = "".join(compound_lines)
+            hash_value = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            self.__compound_hash_cache[i] = hash_value
+
+    def get_compound_hash(self, index: int) -> str:
+        """
+        指定されたインデックスの化合物のハッシュ値を取得する
+
+        Args:
+            index: 取得する化合物のインデックス
+
+        Returns:
+            化合物のハッシュ値（SHA-256ハッシュ値の16進数文字列）
+
+        Raises:
+            IndexError: インデックスが範囲外の場合
+        """
+        if index not in self.__compound_hash_cache:
+            raise IndexError(f"インデックス {index} は範囲外です")
+        return self.__compound_hash_cache[index]
 
     @cached_property
     def content_hash(self) -> str:

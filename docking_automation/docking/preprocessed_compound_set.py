@@ -18,16 +18,23 @@ class PreprocessedCompoundSet:
     実際にどのフィールドを使うかはドッキングツールによって依存する。
     """
 
-    def __init__(self, file_paths: Optional[List[Path]] = None, data: Optional[object] = None):
+    def __init__(
+        self,
+        file_paths: Optional[List[Path]] = None,
+        data: Optional[object] = None,
+        compound_hash_cache: Optional[Dict[int, str]] = None,
+    ):
         """
         前処理済みの化合物群を表すオブジェクトを初期化する。
 
         Args:
             file_paths: 前処理済み化合物ファイルのパスのリスト
             data: メモリ上のデータ（オプション）
+            compound_hash_cache: 化合物のハッシュ値キャッシュ（インデックス -> ハッシュ値）
         """
         self.file_paths = file_paths or []  # 複数の化合物のファイルパス
         self.data = data
+        self.__compound_hash_cache = compound_hash_cache or {}  # インデックス -> 化合物ハッシュ値のキャッシュ
 
     def get_properties(self) -> Dict[str, Any]:
         """
@@ -65,3 +72,20 @@ class PreprocessedCompoundSet:
         sha256_hash.update(combined_hash.encode("utf-8"))
         combined_hash = sha256_hash.hexdigest()
         return combined_hash
+
+    def get_compound_hash(self, index: int) -> str:
+        """
+        指定されたインデックスの化合物のハッシュ値を取得する
+
+        Args:
+            index: 取得する化合物のインデックス
+
+        Returns:
+            化合物のハッシュ値（SHA-256ハッシュ値の16進数文字列）
+
+        Raises:
+            IndexError: インデックスが範囲外の場合
+        """
+        if index not in self.__compound_hash_cache:
+            raise IndexError(f"インデックス {index} は範囲外です")
+        return self.__compound_hash_cache[index]

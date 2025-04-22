@@ -61,7 +61,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
         compound_set_id: str,
         compound_index: int,
         protein_content_hash: str,
-        compoundset_content_hash: str,
+        compound_content_hash: str,
+        compoundset_content_hash: str = "",
     ) -> bool:
         """指定されたキーのデータが既に存在するかどうかを確認します。
 
@@ -70,7 +71,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
             compound_set_id (str): 化合物セットID。
             compound_index (int): 化合物インデックス。
             protein_content_hash (str): タンパク質ファイルの内容ハッシュ値。
-            compoundset_content_hash (str): 化合物セットファイルの内容ハッシュ値。
+            compound_content_hash (str): 化合物のハッシュ値。
+            compoundset_content_hash (str, optional): 化合物セットファイルの内容ハッシュ値（後方互換性のため）。
 
         Returns:
             bool: データが存在する場合はTrue、存在しない場合はFalse。
@@ -83,11 +85,9 @@ class HDF5DockingResultRepository(DockingResultRepository):
 
         try:
             with h5py.File(self.hdf5_file_path, "r") as f:
-                group_path = (
-                    f"/results/protein_{protein_content_hash}/compoundset_{compoundset_content_hash}/{compound_index}"
-                )
-                # TODO: パス作成は多数の場所で共通なので、関数化して使い回す
-                return group_path in f
+                # 新しいパス形式
+                new_group_path = f"/results/{protein_content_hash}/{compound_content_hash}"
+                return new_group_path in f
         except Exception as e:
             logger.error(f"データの存在確認中にエラーが発生しました: {e}", exc_info=True)
             return False
@@ -114,11 +114,12 @@ class HDF5DockingResultRepository(DockingResultRepository):
             docking_result.compound_set_id,
             docking_result.compound_index,
             docking_result.protein_content_hash,
+            docking_result.compound_content_hash,
             docking_result.compoundset_content_hash,
         ):
             logger.info(
                 f"追記モード: 既存のデータが存在するためスキップします: "
-                f"protein_{docking_result.protein_content_hash}/compoundset_{docking_result.compoundset_content_hash}/{docking_result.compound_index}"
+                f"{docking_result.protein_content_hash}/{docking_result.compound_content_hash}"
             )
             return
 
@@ -128,8 +129,10 @@ class HDF5DockingResultRepository(DockingResultRepository):
                 with lock.acquire(timeout=10):
                     logger.debug(f"ロック取得成功 (試行 {attempt + 1}/{max_retries}): {self.lock_file_path}")
                     with h5py.File(self.hdf5_file_path, "a") as f:
-                        # グループパス: /results/protein_{protein_content_hash}/compoundset_{compoundset_content_hash}/{compound_index}
-                        group_path = f"/results/protein_{docking_result.protein_content_hash}/compoundset_{docking_result.compoundset_content_hash}/{docking_result.compound_index}"
+                        # 新しいグループパス: /results/{protein_content_hash}/{compound_content_hash}
+                        group_path = (
+                            f"/results/{docking_result.protein_content_hash}/{docking_result.compound_content_hash}"
+                        )
 
                         # 上書きモードの場合、既存のグループを削除
                         if self.mode == "overwrite" and group_path in f:
@@ -289,6 +292,15 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         elif part.startswith("compoundset_"):
                             compoundset_content_hash = part.replace("compoundset_", "")
 
+                    # 化合物のハッシュ値を取得
+                    compound_content_hash = "default_compound_hash"
+
+                    # パスから抽出を試みる
+                    parts = group_path.split("/")
+                    if len(parts) >= 4:  # 新しいパス形式: /results/{protein_hash}/{compound_hash}
+                        protein_content_hash = parts[2]
+                        compound_content_hash = parts[3]
+
                     result = DockingResult(
                         result_path=Path(result_path_str),
                         protein_id=group.attrs["protein_id"],
@@ -296,6 +308,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         compound_index=group.attrs["compound_index"],
                         docking_score=docking_score,
                         protein_content_hash=protein_content_hash,
+                        compound_content_hash=compound_content_hash,
                         compoundset_content_hash=compoundset_content_hash,
                         metadata=metadata,
                         id=result_id,
@@ -368,6 +381,15 @@ class HDF5DockingResultRepository(DockingResultRepository):
                                     elif part.startswith("compoundset_"):
                                         compoundset_content_hash = part.replace("compoundset_", "")
 
+                                # 化合物のハッシュ値を取得
+                                compound_content_hash = "default_compound_hash"
+
+                                # パスから抽出を試みる
+                                parts = group_path.split("/")
+                                if len(parts) >= 4:  # 新しいパス形式: /results/{protein_hash}/{compound_hash}
+                                    protein_content_hash = parts[2]
+                                    compound_content_hash = parts[3]
+
                                 result = DockingResult(
                                     result_path=Path(result_path_str),
                                     protein_id=compound_group.attrs["protein_id"],
@@ -375,6 +397,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
                                     compound_index=compound_group.attrs["compound_index"],  # 属性から取得
                                     docking_score=docking_score,
                                     protein_content_hash=protein_content_hash,
+                                    compound_content_hash=compound_content_hash,
                                     compoundset_content_hash=compoundset_content_hash,
                                     metadata=metadata,
                                     id=result_id,

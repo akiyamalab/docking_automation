@@ -119,8 +119,13 @@ class AutoDockVina(DockingToolABC):
         # PDBQTファイルに変換（複数の化合物に対応）
         pdbqt_paths = self.converter.compound_to_pdbqt(compound_set, temp_dir)
 
+        # 化合物のハッシュ値キャッシュを取得
+        # プライベート属性にアクセスするためのハック
+        # 通常はこのような方法は避けるべきだが、、、、
+        compound_hash_cache = getattr(compound_set, "_CompoundSet__compound_hash_cache").copy()
+
         # 前処理済みの化合物セットを返す
-        return PreprocessedCompoundSet(file_paths=pdbqt_paths)
+        return PreprocessedCompoundSet(file_paths=pdbqt_paths, compound_hash_cache=compound_hash_cache)
 
     def dock(self, parameters: DockingParameters, verbose: bool = False) -> List[DockingResult]:
         """
@@ -234,6 +239,9 @@ class AutoDockVina(DockingToolABC):
                     "pose_path": str(output_sdf),
                 }
 
+                # 化合物のハッシュ値を取得
+                compound_hash = compound_set.get_compound_hash(idx)
+
                 # DockingResultオブジェクトを作成
                 result = DockingResult(
                     result_path=output_sdf,  # SDFファイルのパスを設定
@@ -242,6 +250,7 @@ class AutoDockVina(DockingToolABC):
                     compound_index=start_index + idx,  # 実際の化合物インデックス（インデックス範囲を考慮）
                     docking_score=scores[0, 0],
                     protein_content_hash=protein.content_hash,
+                    compound_content_hash=compound_hash,
                     compoundset_content_hash=compound_set.content_hash,
                     metadata=metadata,
                 )

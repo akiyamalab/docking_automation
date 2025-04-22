@@ -33,7 +33,8 @@ class DockingResult:
         compound_index: int,
         docking_score: float,
         protein_content_hash: str,
-        compoundset_content_hash: str,
+        compound_content_hash: str,
+        compoundset_content_hash: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         id: Optional[str] = None,
         version: int = 1,
@@ -48,7 +49,8 @@ class DockingResult:
             compound_index: 化合物セット内の化合物のインデックス
             docking_score: ドッキングスコア
             protein_content_hash: タンパク質ファイルの内容ハッシュ値
-            compoundset_content_hash: 化合物セットファイルの内容ハッシュ値
+            compound_content_hash: 化合物のハッシュ値
+            compoundset_content_hash: 化合物セットファイルの内容ハッシュ値（後方互換性のため）
             metadata: メタデータ
             id: 結果のID（指定しない場合は自動生成）
             version: 結果のバージョン（楽観的ロックのために使用）
@@ -60,6 +62,7 @@ class DockingResult:
         self.compound_index = compound_index
         self.docking_score = docking_score
         self.protein_content_hash = protein_content_hash
+        self.compound_content_hash = compound_content_hash
         self.compoundset_content_hash = compoundset_content_hash
         self.metadata = metadata or {}
         self.id = id or f"{protein_id}_{compound_set_id}_{compound_index}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -216,6 +219,7 @@ class DockingResult:
             compound_index=self.compound_index,
             docking_score=self.docking_score,
             protein_content_hash=self.protein_content_hash,
+            compound_content_hash=self.compound_content_hash,
             compoundset_content_hash=self.compoundset_content_hash,
             metadata=new_metadata,
             id=self.id,
@@ -231,7 +235,8 @@ class DockingResult:
         compound_index: int,
         docking_score: float,
         protein_content_hash: str,
-        compoundset_content_hash: str,
+        compound_content_hash: str,
+        compoundset_content_hash: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         id: Optional[str] = None,
     ) -> "DockingResult":
@@ -246,7 +251,8 @@ class DockingResult:
             compound_index: 化合物セット内の化合物のインデックス
             docking_score: ドッキングスコア
             protein_content_hash: タンパク質ファイルの内容ハッシュ値
-            compoundset_content_hash: 化合物セットファイルの内容ハッシュ値
+            compound_content_hash: 化合物のハッシュ値
+            compoundset_content_hash: 化合物セットファイルの内容ハッシュ値（後方互換性のため）
             metadata: メタデータ
             id: 結果のID（指定しない場合は自動生成）
 
@@ -261,6 +267,7 @@ class DockingResult:
             compound_index=compound_index,
             docking_score=docking_score,
             protein_content_hash=protein_content_hash,
+            compound_content_hash=compound_content_hash,
             compoundset_content_hash=compoundset_content_hash,
             metadata=metadata,
             id=id,
@@ -319,6 +326,7 @@ class DockingResult:
             compound_index=self.compound_index,
             docking_score=self.docking_score,
             protein_content_hash=self.protein_content_hash,
+            compound_content_hash=self.compound_content_hash,
             compoundset_content_hash=self.compoundset_content_hash,
             metadata=self.metadata.copy(),
             id=self.id,
@@ -349,6 +357,7 @@ class DockingResult:
             compound_index=self.compound_index,
             docking_score=self.docking_score,
             protein_content_hash=self.protein_content_hash,
+            compound_content_hash=self.compound_content_hash,
             compoundset_content_hash=self.compoundset_content_hash,
             metadata=self.metadata.copy(),
             id=self.id,

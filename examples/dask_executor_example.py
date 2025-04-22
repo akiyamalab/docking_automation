@@ -123,7 +123,7 @@ def copy_protein_structure(protein: "Protein", output_dir: Path, name_prefix: st
 @measure_execution_time
 def run_docking(
     protein: "Protein",
-    compound_set: Union["CompoundSet", "PreprocessedCompoundSet"],
+    compound_set: Union["CompoundSet"],
     grid_box: "GridBox",
     additional_params: Any,
 ) -> "DockingResultCollection":
@@ -193,27 +193,17 @@ def run_parallel_docking():
     # タンパク質構造のセグメンテーション
     all_segmented_proteins = []
     protein_names = []
-
     for protein_path in alphafold_protein_paths:
         protein_name = protein_path.stem
         protein_output_dir = output_dir / protein_name
         print(f"\n=== タンパク質 {protein_name} の処理を開始 ===")
 
         segmented_proteins = _segment_protein(protein_path, protein_output_dir)
-
-        if not segmented_proteins:
-            print(f"タンパク質 {protein_name} のセグメンテーションに失敗しました。")
-            continue
-
         all_segmented_proteins.extend(segmented_proteins)
         protein_names.extend([protein_name] * len(segmented_proteins))
 
-    if not all_segmented_proteins:
-        print("すべてのタンパク質のセグメンテーションに失敗しました。処理を中止します。")
-        return
-
     # 化合物セットの読み込みと分割
-    chunk_size = 1  # チャンク分割の差異の、チャンクあたりの化合物数
+    chunk_size = 1  # チャンク分割の、チャンクあたりの化合物数
     compound_set = CompoundSet(compound_path)
     compound_sets: list[CompoundSet] = compound_set.split_by_chunks(chunk_size)
 
@@ -297,7 +287,6 @@ def run_parallel_docking():
     # 各タンパク質・セグメントごとのトップヒットを表示
     for (protein_name, segment_index), data in protein_segment_results.items():
         protein = data["protein"]
-        segment_top_hits = data["results"].get_top(5)  # 各セグメントの上位5件
         grid_box = grid_boxes.get((protein_name, segment_index))
 
         print(f"\nタンパク質: {protein_name}, セグメント {segment_index + 1} ({protein.id}) の結果:")
@@ -320,9 +309,8 @@ def run_parallel_docking():
 
             # タンパク質構造ファイルをコピー
             try:
-                protein = data["protein"]
-                protein_copy_path = copy_protein_structure(
-                    protein=protein, output_dir=sdf_output_dir / "proteins", name_prefix=protein_segment_id
+                copy_protein_structure(
+                    protein=data["protein"], output_dir=sdf_output_dir / "proteins", name_prefix=protein_segment_id
                 )
                 # ログ出力はcopy_protein_structure内で行われるため、ここでは不要
             except Exception as e:
