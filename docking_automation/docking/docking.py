@@ -101,6 +101,7 @@ class DockingToolABC(ABC):
         compound_set: CompoundSet,
         grid_box: GridBox,
         additional_params: SpecificDockingParametersABC,
+        compound_indices: set[int] = None,
     ) -> DockingResultCollection:
         """
         ドッキング計算を実行し、結果をコレクションとして返す。
@@ -112,10 +113,15 @@ class DockingToolABC(ABC):
             compound_set: ドッキング対象の化合物セット
             grid_box: ドッキング計算の領域
             additional_params: 追加のパラメータ
+            compound_indices: 処理対象の化合物インデックスのセット（指定しない場合はすべての化合物を処理）
 
         Returns:
             ドッキング結果のコレクション
         """
+        # compound_indicesが指定されている場合は、そのインデックスの化合物のみを含む新しいCompoundSetを作成
+        if compound_indices is not None:
+            compound_set = compound_set.with_indices(compound_indices)
+
         results = self._dock_with_auto_preprocess(
             protein=protein, compound_set=compound_set, grid_box=grid_box, additional_params=additional_params
         )

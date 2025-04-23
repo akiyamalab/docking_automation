@@ -170,14 +170,22 @@ class AutoDockVina(DockingToolABC):
         # インデックス範囲の初期化
         start_index = 0
 
-        # CompoundSetのプロパティを取得して、インデックス範囲が設定されているかどうかを確認
+        # CompoundSetのプロパティを取得して、インデックスリストまたはインデックス範囲が設定されているかどうかを確認
         try:
             properties = compound_set.get_properties()
-            index_range = properties.get("index_range")
-            if index_range is not None:
+            
+            # インデックスリストが設定されている場合
+            indices = properties.get("indices")
+            if indices is not None:
+                # インデックスリストが設定されている場合は、start_indexは0のままでOK
+                # 実際のインデックスはcompound_indexの計算時に使用する
+                pass
+            # インデックス範囲が設定されている場合
+            elif "index_range" in properties:
+                index_range = properties["index_range"]
                 start_index = index_range["start"]
         except Exception as e:
-            print(f"インデックス範囲の取得中にエラーが発生しました: {e}")
+            print(f"インデックス情報の取得中にエラーが発生しました: {e}")
 
         # 化合物の数を取得（各タスクで処理する化合物数）
         task_compounds = len(compound_set.file_paths)
@@ -242,12 +250,22 @@ class AutoDockVina(DockingToolABC):
                 # 化合物のハッシュ値を取得
                 compound_hash = compound_set.get_compound_hash(idx)
 
+                # 実際の化合物インデックスを計算
+                # インデックスリストが設定されている場合は、そのリスト内のインデックスを使用
+                compound_index = idx
+                if "indices" in properties:
+                    # インデックスリストが設定されている場合は、そのリスト内のインデックスを使用
+                    compound_index = properties["indices"][idx]
+                else:
+                    # インデックス範囲が設定されている場合は、start_indexを加算
+                    compound_index = start_index + idx
+
                 # DockingResultオブジェクトを作成
                 result = DockingResult(
                     result_path=output_sdf,  # SDFファイルのパスを設定
                     protein_id=protein.file_path.stem,  # タンパク質は1つのみ
                     compound_set_id=compound_path.stem.split("_")[0],  # 化合物セットID（ファイル名から抽出）
-                    compound_index=start_index + idx,  # 実際の化合物インデックス（インデックス範囲を考慮）
+                    compound_index=compound_index,  # 実際の化合物インデックス
                     docking_score=scores[0, 0],
                     protein_content_hash=protein.content_hash,
                     compound_content_hash=compound_hash,

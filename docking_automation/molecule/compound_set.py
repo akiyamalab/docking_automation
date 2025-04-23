@@ -304,6 +304,45 @@ class CompoundSet:
 
         return new_compound_set
 
+    def with_indices(self, indices: set[int]) -> "CompoundSet":
+        """
+        指定されたインデックスセットの化合物のみを含む新しいCompoundSetを作成する。
+
+        元のCompoundSetと同じファイルを参照するが、処理対象のインデックスが制限される。
+        不変性を維持するため、新しいインスタンスを返す。
+        指定されたインデックスはソートされ、内部処理の一貫性が保たれる。
+
+        Args:
+            indices: 処理対象の化合物インデックスのセット
+
+        Returns:
+            インデックスが制限された新しいCompoundSet
+
+        Raises:
+            ValueError: インデックスが範囲外の場合、または空のセットが指定された場合
+        """
+        # インデックスの検証
+        total_compounds = self.get_compound_count()
+        
+        # 空のセットの場合はエラー
+        if not indices:
+            raise ValueError("インデックスセットが空です")
+        
+        # 範囲外のインデックスがないか確認
+        invalid_indices = [idx for idx in indices if idx < 0 or idx >= total_compounds]
+        if invalid_indices:
+            raise ValueError(f"インデックス {invalid_indices} は範囲外です（0-{total_compounds-1}）")
+        
+        # 新しいCompoundSetを作成（同じファイルを参照）
+        indices_str = "_".join(map(str, sorted(indices)))
+        new_compound_set = CompoundSet(path=self.path, id=f"{self.id}_indices_{indices_str}")
+        
+        # インデックスリストを保存するための属性を追加
+        # プライベート属性として追加し、外部からは直接アクセスできないようにする
+        new_compound_set.__indices = sorted(indices)  # ソートして保存
+        
+        return new_compound_set
+
     # TODO: [P2] [DDD] 集約ルートとしての操作を追加する
     def get_compound(self, index: int) -> Dict[str, Any]:
         """
@@ -351,17 +390,24 @@ class CompoundSet:
         """
         すべての化合物を取得する。
 
-        インデックス範囲が設定されている場合は、その範囲内の化合物のみを返す。
+        優先順位：
+        1. インデックスセットが設定されている場合は、そのセット内の化合物のみを返す
+        2. インデックス範囲が設定されている場合は、その範囲内の化合物のみを返す
+        3. 上記のいずれも設定されていない場合は、すべての化合物を返す
 
         Returns:
             化合物のリスト
         """
-        # インデックス範囲が設定されている場合は、その範囲内の化合物のみを返す
+        # 優先順位1: インデックスセットが設定されている場合
+        if getattr(self, "_CompoundSet__indices", None) is not None:
+            return [self.get_compound(i) for i in self.__indices]
+        
+        # 優先順位2: インデックス範囲が設定されている場合
         if self.__index_range is not None:
             start_index, end_index = self.__index_range
             return [self.get_compound(i) for i in range(start_index, end_index)]
 
-        # インデックス範囲が設定されていない場合は、すべての化合物を返す
+        # 優先順位3: 上記のいずれも設定されていない場合
         return [self.get_compound(i) for i in range(self.get_compound_count())]
 
     @classmethod
@@ -440,19 +486,27 @@ class CompoundSet:
         """
         化合物セットのイテレータを取得する。
 
-        インデックス範囲が設定されている場合は、その範囲内の化合物のみをイテレートする。
+        優先順位：
+        1. インデックスセットが設定されている場合は、そのセット内の化合物のみをイテレートする
+        2. インデックス範囲が設定されている場合は、その範囲内の化合物のみをイテレートする
+        3. 上記のいずれも設定されていない場合は、すべての化合物をイテレートする
+
         分割されたCompoundSetの場合、元のCompoundSetにおけるインデックス情報も含まれる。
 
         Returns:
             化合物のイテレータ
         """
-        # インデックス範囲が設定されている場合は、その範囲内の化合物のみをイテレートする
-        if self.__index_range is not None:
+        # 優先順位1: インデックスセットが設定されている場合
+        if getattr(self, "_CompoundSet__indices", None) is not None:
+            for i in self.__indices:
+                yield self.get_compound(i)
+        # 優先順位2: インデックス範囲が設定されている場合
+        elif self.__index_range is not None:
             start_index, end_index = self.__index_range
             for i in range(start_index, end_index):
                 yield self.get_compound(i)
+        # 優先順位3: 上記のいずれも設定されていない場合
         else:
-            # インデックス範囲が設定されていない場合は、すべての化合物をイテレートする
             for i in range(self.get_compound_count()):
                 yield self.get_compound(i)
 
@@ -460,24 +514,33 @@ class CompoundSet:
         """
         化合物セットの長さ（化合物の数）を取得する。
 
-        インデックス範囲が設定されている場合は、その範囲内の化合物の数を返す。
+        優先順位：
+        1. インデックスセットが設定されている場合は、そのセット内の化合物の数を返す
+        2. インデックス範囲が設定されている場合は、その範囲内の化合物の数を返す
+        3. 上記のいずれも設定されていない場合は、すべての化合物の数を返す
 
         Returns:
             化合物の数
         """
-        # インデックス範囲が設定されている場合は、その範囲内の化合物の数を返す
+        # 優先順位1: インデックスセットが設定されている場合
+        if getattr(self, "_CompoundSet__indices", None) is not None:
+            return len(self.__indices)
+        
+        # 優先順位2: インデックス範囲が設定されている場合
         if self.__index_range is not None:
             start_index, end_index = self.__index_range
             return end_index - start_index
 
-        # インデックス範囲が設定されていない場合は、すべての化合物の数を返す
+        # 優先順位3: 上記のいずれも設定されていない場合
         return self.get_compound_count()
 
     def get_properties(self) -> Dict[str, Any]:
         """
         化合物セットのプロパティを取得する。
 
-        インデックス範囲が設定されている場合は、その情報も含める。
+        優先順位：
+        1. インデックスセットが設定されている場合は、その情報も含める
+        2. インデックス範囲が設定されている場合は、その情報も含める
         分割されたCompoundSetの場合、元のCompoundSetに関する情報も含める。
 
         Returns:
@@ -495,8 +558,12 @@ class CompoundSet:
             "content_hash": self.content_hash,  # ファイル内容のハッシュ値
         }
 
-        # インデックス範囲が設定されている場合は、その情報も含める
-        if self.__index_range is not None:
+        # 優先順位1: インデックスセットが設定されている場合
+        if getattr(self, "_CompoundSet__indices", None) is not None:
+            properties["indices"] = self.__indices
+            properties["total_compounds"] = self.get_compound_count()  # 全体の化合物の数
+        # 優先順位2: インデックス範囲が設定されている場合
+        elif self.__index_range is not None:
             start_index, end_index = self.__index_range
             properties["index_range"] = {
                 "start": start_index,
@@ -505,7 +572,7 @@ class CompoundSet:
             }
 
         # 元のインデックス情報がある場合は追加
-        if hasattr(self, "_original_indices"):
+        if hasattr(self, "_original_indices") and self._original_indices is not None:
             properties["original_indices"] = self._original_indices
             properties["original_compound_set_id"] = self._original_compound_set_id
 

@@ -187,6 +187,43 @@ class TestCompoundSet:
         with pytest.raises(ValueError):
             sample_compound_set.with_index_range(1, 1)
 
+    def test_with_indices(self, sample_compound_set):
+        """インデックスセットを持つインスタンス作成のテスト"""
+        # 有効なインデックスセットでインスタンスを作成
+        indices = {0, 1}
+        indices_compound_set = sample_compound_set.with_indices(indices)
+        assert indices_compound_set.id == f"{sample_compound_set.id}_indices_0_1"
+        assert len(indices_compound_set) == 2
+        assert indices_compound_set.get_compound_count() == 2  # 元の化合物数は変わらない
+
+        # プロパティにインデックスリストが含まれていることを確認
+        properties = indices_compound_set.get_properties()
+        assert "indices" in properties
+        assert properties["indices"] == [0, 1]
+        assert properties["total_compounds"] == 2
+
+        # イテレーションが正しく動作することを確認
+        compounds = list(indices_compound_set)
+        assert len(compounds) == 2
+        assert compounds[0]["index"] == 0
+        assert compounds[1]["index"] == 1
+
+        # get_all_compoundsが正しく動作することを確認
+        all_compounds = indices_compound_set.get_all_compounds()
+        assert len(all_compounds) == 2
+        assert all_compounds[0]["index"] == 0
+        assert all_compounds[1]["index"] == 1
+
+        # 範囲外のインデックスでValueErrorが発生することを確認
+        with pytest.raises(ValueError):
+            sample_compound_set.with_indices({-1, 1})
+        with pytest.raises(ValueError):
+            sample_compound_set.with_indices({0, 2})
+
+        # 空のセットでValueErrorが発生することを確認
+        with pytest.raises(ValueError):
+            sample_compound_set.with_indices(set())
+
     def test_create_factory_method(self, tmp_path):
         """createファクトリメソッドのテスト"""
         sdf_path = tmp_path / "factory_test.sdf"
