@@ -352,6 +352,94 @@ class HDF5DockingResultRepository(DockingResultRepository):
                 lock.release()
                 logger.debug(f"ロック解放 (読み込み): {self.lock_file_path}")
 
+    def load_by_hashes(
+        self,
+        protein_content_hash: str,
+        compound_content_hash: str
+    ) -> Optional[DockingResult]:
+        """タンパク質と化合物のハッシュ値に基づいてドッキング結果をロードします。
+
+        Args:
+            protein_content_hash (str): タンパク質ファイルの内容ハッシュ値。
+            compound_content_hash (str): 化合物のハッシュ値。
+
+        Returns:
+            Optional[DockingResult]: 見つかったドッキング結果。見つからない場合はNone。
+        """
+        # ファイルが存在するか確認
+        if not self.hdf5_file_path.exists():
+            logger.warning(f"HDF5ファイルが存在しません: {self.hdf5_file_path}")
+            return None
+
+        # 指定されたハッシュ値のデータが存在するか確認
+        if not self._exists(protein_content_hash, compound_content_hash):
+            logger.debug(f"指定されたハッシュ値のデータが存在しません: {protein_content_hash}/{compound_content_hash}")
+            return None
+
+        lock = FileLock(self.lock_file_path)
+        try:
+            with lock.acquire(timeout=60):
+                logger.debug(f"ロック取得 (ハッシュ値による読み込み): {self.lock_file_path}")
+                with h5py.File(self.hdf5_file_path, "r") as f:
+                    # 新しいパス形式で検索
+                    group_path = f"/results/{protein_content_hash}/{compound_content_hash}"
+                    
+                    if group_path not in f:
+                        logger.debug(f"指定されたパスが存在しません: {group_path}")
+                        return None
+                    
+                    group = f[group_path]
+                    
+                    # データセットと属性から値を取得
+                    docking_score = group["docking_score"][()]
+                    sdf_content = group["sdf_content"][()].decode("utf-8")
+                    metadata_json = group["metadata"][()].decode("utf-8")
+                    metadata = json.loads(metadata_json)
+                    result_id = group.attrs["id"]
+                    version = group.attrs["version"]
+                    protein_id = group.attrs["protein_id"]
+                    compound_set_id = group.attrs["compound_set_id"]
+                    compound_index = group.attrs["compound_index"]
+
+                    # 一時ファイルを作成
+                    import tempfile
+
+                    with tempfile.NamedTemporaryFile(suffix=".sdf", delete=False) as temp_file:
+                        temp_file.write(sdf_content.encode("utf-8"))
+
+                    # 一時ファイルのパスを取得
+                    temp_path = Path(temp_file.name)
+
+                    # 再利用されたことを示すメタデータを追加
+                    metadata["reused"] = True
+
+                    result = DockingResult(
+                        result_path=temp_path,
+                        protein_id=protein_id,
+                        compound_set_id=compound_set_id,
+                        compound_index=compound_index,
+                        docking_score=docking_score,
+                        protein_content_hash=protein_content_hash,
+                        compound_content_hash=compound_content_hash,
+                        compoundset_content_hash=metadata.get("compoundset_content_hash", ""),
+                        metadata=metadata,
+                        id=result_id,
+                        version=version,
+                    )
+                    logger.info(f"ハッシュ値によるドッキング結果のロードに成功しました: {group_path}")
+                    return result
+
+        except TimeoutError:
+            logger.error(f"ロックの取得にタイムアウトしました (ハッシュ値による読み込み): {self.lock_file_path}")
+            raise
+        except Exception as e:
+            logger.error(f"HDF5ファイルからのハッシュ値による読み込み中にエラーが発生しました: {e}", exc_info=True)
+            raise
+        finally:
+            if lock.is_locked:
+                lock.release()
+                logger.debug(f"ロック解放 (ハッシュ値による読み込み): {self.lock_file_path}")
+
     def load_all(self) -> DockingResultCollection:
         """HDF5ファイルに保存されているすべてのドッキング結果をロードします。
 

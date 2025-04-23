@@ -22,6 +22,7 @@ from vina import Vina
 
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
+from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import HDF5DockingResultRepository
 
 from ..converters.molecule_converter import MoleculeConverter
 from ..molecule.compound_set import CompoundSet
@@ -127,15 +128,23 @@ class AutoDockVina(DockingToolABC):
         # 前処理済みの化合物セットを返す
         return PreprocessedCompoundSet(file_paths=pdbqt_paths, compound_hash_cache=compound_hash_cache)
 
-    def dock(self, parameters: DockingParameters, verbose: bool = False) -> List[DockingResult]:
+    def dock(
+        self,
+        parameters: DockingParameters,
+        repository: Optional[HDF5DockingResultRepository] = None,
+        verbose: bool = False
+    ) -> List[DockingResult]:
         """
         AutoDock Vinaを使ってドッキング計算を実施する。
 
         複数の化合物に対してドッキング計算を行い、結果のリストを返す。
         CompoundSetにインデックス範囲が設定されている場合は、その範囲内の化合物のみを処理する。
+        リポジトリが指定されている場合は、可能な場合は既存の結果を再利用する。
 
         Args:
             parameters: ドッキングパラメータ
+            repository: 結果を保存/取得するリポジトリ（指定しない場合は再利用しない）
+            verbose: 詳細なログを出力するかどうか
 
         Returns:
             ドッキング結果のリスト
@@ -206,6 +215,40 @@ class AutoDockVina(DockingToolABC):
                 if verbose:
                     print(f"化合物 {idx+1}/{len(compounds_to_process)} を処理中...")
 
+                # 化合物のハッシュ値を取得
+                compound_hash = compound_set.get_compound_hash(idx)
+
+                # 実際の化合物インデックスを計算
+                # インデックスリストが設定されている場合は、そのリスト内のインデックスを使用
+                compound_index = idx
+                if "indices" in properties:
+                    # インデックスリストが設定されている場合は、そのリスト内のインデックスを使用
+                    compound_index = properties["indices"][idx]
+                else:
+                    # インデックス範囲が設定されている場合は、start_indexを加算
+                    compound_index = start_index + idx
+
+                # リポジトリが指定されている場合、既存の結果を確認
+                if repository is not None and repository._exists(
+                    protein.content_hash,
+                    compound_hash
+                ):
+                    # 既存の結果を取得
+                    if verbose:
+                        print(f"化合物 {idx+1}/{len(compounds_to_process)} の結果を再利用します")
+                    
+                    result = repository.load_by_hashes(
+                        protein.content_hash,
+                        compound_hash
+                    )
+                    
+                    if result is not None:
+                        results.append(result)
+                        if verbose:
+                            print(f"化合物 {idx+1}/{len(compounds_to_process)} の結果を再利用しました（スコア: {result.docking_score}）")
+                        continue  # 次の化合物へ
+                
+                # 既存の結果がない場合、通常通りドッキング計算を実行
                 # 結果ファイルのパス（化合物ごとに区別）
                 output_pdbqt = temp_dir / f"output_{idx}.pdbqt"
                 output_sdf = temp_dir / f"output_{idx}.sdf"
@@ -246,19 +289,6 @@ class AutoDockVina(DockingToolABC):
                     "scores": scores,
                     "pose_path": str(output_sdf),
                 }
-
-                # 化合物のハッシュ値を取得
-                compound_hash = compound_set.get_compound_hash(idx)
-
-                # 実際の化合物インデックスを計算
-                # インデックスリストが設定されている場合は、そのリスト内のインデックスを使用
-                compound_index = idx
-                if "indices" in properties:
-                    # インデックスリストが設定されている場合は、そのリスト内のインデックスを使用
-                    compound_index = properties["indices"][idx]
-                else:
-                    # インデックス範囲が設定されている場合は、start_indexを加算
-                    compound_index = start_index + idx
 
                 # DockingResultオブジェクトを作成
                 result = DockingResult(

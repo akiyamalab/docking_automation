@@ -29,7 +29,11 @@ from docking_automation.domain.services.protein_segmentation_service import (
 )
 from docking_automation.infrastructure.executor import DaskExecutor, Task, TaskManager
 from docking_automation.infrastructure.repositories.docking_result_repository_factory import (
+    DockingResultRepositoryFactory,
     RepositoryType,
+)
+from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import (
+    HDF5DockingResultRepository,
 )
 
 # 時間計測用デコレータをインポート
@@ -126,15 +130,17 @@ def run_docking(
     compound_set: Union["CompoundSet"],
     grid_box: "GridBox",
     additional_params: Any,
+    repository_dir: Path = None,
 ) -> "DockingResultCollection":
     """
-    ドッキング計算を実行する。
+    ドッキング計算を実行する。計算結果の再利用機能を使用する。
 
     Args:
         protein: タンパク質
         compound_set: 化合物セット
         grid_box: グリッドボックス
         additional_params: 追加パラメータ
+        repository_dir: リポジトリディレクトリのパス（指定しない場合は再利用しない）
 
     Returns:
         ドッキング結果のコレクション
@@ -149,19 +155,53 @@ def run_docking(
     except Exception as e:
         print(f"[Protein:{protein.id}] インデックス範囲の取得中にエラーが発生しました: {e}")
 
+    # リポジトリの初期化（指定されている場合）
+    repository = None
+    if repository_dir is not None:
+        try:
+            # HDF5リポジトリを初期化
+            repository_factory = DockingResultRepositoryFactory()
+            repository = repository_factory.create(
+                repository_type=RepositoryType.HDF5,
+                base_directory=repository_dir,
+                config={"mode": "append"}
+            )
+            print(f"[Protein:{protein.id}] リポジトリを初期化しました: {repository_dir}")
+        except Exception as e:
+            print(f"[Protein:{protein.id}] リポジトリの初期化中にエラーが発生しました: {e}")
+            # リポジトリの初期化に失敗した場合は、再利用せずに続行
+            repository = None
+
     # ドッキング計算を実行
     docking_tool = AutoDockVina()
-    results = docking_tool.run_docking(
-        protein=protein,
-        compound_set=compound_set,
-        grid_box=grid_box,
-        additional_params=additional_params,
-    )
+    
+    # リポジトリが指定されている場合は、再利用機能を使用
+    if repository is not None and isinstance(repository, HDF5DockingResultRepository):
+        print(f"[Protein:{protein.id}] 計算結果の再利用機能を使用します")
+        results = docking_tool.run_docking_with_reuse(
+            protein=protein,
+            compound_set=compound_set,
+            grid_box=grid_box,
+            additional_params=additional_params,
+            repository=repository,
+        )
+    else:
+        # 通常のドッキング計算を実行
+        results = docking_tool.run_docking(
+            protein=protein,
+            compound_set=compound_set,
+            grid_box=grid_box,
+            additional_params=additional_params,
+        )
 
     # compound_indexを修正
     for i, result in enumerate(results):
         # DockingResultクラスのcompound_indexフィールドを直接修正
         result.compound_index = start_index + i
+        
+        # 再利用されたかどうかを示すメタデータを追加
+        if "reused" in result.metadata and result.metadata["reused"]:
+            print(f"[Protein:{protein.id}] 化合物 {result.compound_index} の結果を再利用しました（スコア: {result.docking_score}）")
 
     # NumPy配列をリストに変換
     for result in results:
@@ -234,6 +274,7 @@ def run_parallel_docking():
                     "compound_set": split_compound_set,
                     "grid_box": grid_box,
                     "additional_params": AutoDockVinaParameters(),
+                    "repository_dir": repository_dir,  # リポジトリディレクトリを追加
                 },
                 id=f"docking_task_protein_{protein_name}_segment_{i}_chunk_{j}",
             )

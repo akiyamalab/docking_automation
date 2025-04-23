@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional, Set
 
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
+from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import HDF5DockingResultRepository
 
 from ..molecule.compound_set import CompoundSet
 from ..molecule.protein import Protein
@@ -130,4 +131,58 @@ class DockingToolABC(ABC):
         collection = DockingResultCollection()
         collection.extend(results)  # extendを使用して複数の結果を一度に追加
 
+        return collection
+        
+    def run_docking_with_reuse(
+        self,
+        protein: Protein,
+        compound_set: CompoundSet,
+        grid_box: GridBox,
+        additional_params: SpecificDockingParametersABC,
+        repository: HDF5DockingResultRepository,
+        compound_indices: Optional[Set[int]] = None,
+    ) -> DockingResultCollection:
+        """
+        ドッキング計算を実行し、可能な場合は既存の結果を再利用する。
+
+        Args:
+            protein: ドッキング対象のタンパク質
+            compound_set: ドッキング対象の化合物セット
+            grid_box: ドッキング計算の領域
+            additional_params: 追加のパラメータ
+            repository: 結果を保存/取得するリポジトリ
+            compound_indices: 処理対象の化合物インデックスのセット（指定しない場合はすべての化合物を処理）
+
+        Returns:
+            DockingResultCollection: ドッキング結果のコレクション
+        """
+        # compound_indicesが指定されている場合は、そのインデックスの化合物のみを含む新しいCompoundSetを作成
+        if compound_indices is not None:
+            compound_set = compound_set.with_indices(compound_indices)
+
+        # 前処理
+        preprocessed_protein = self._preprocess_protein(protein)
+        preprocessed_compound_set = self._preprocess_compound_set(compound_set)
+        
+        # パラメータの設定
+        common_params = CommonDockingParameters(
+            protein=preprocessed_protein, compound_set=preprocessed_compound_set, grid_box=grid_box
+        )
+        
+        # 具体的なパラメータの設定は各ドッキングツールの実装に依存
+        parameters = DockingParameters(common=common_params, specific=additional_params)
+        
+        # リポジトリを使用してドッキング実行（各ドッキングツールの実装に依存）
+        # 派生クラスでこのメソッドをオーバーライドしない場合は、デフォルトの実装として
+        # dock メソッドにリポジトリを渡す
+        if hasattr(self.dock, "__code__") and "repository" in self.dock.__code__.co_varnames:
+            results = self.dock(parameters, repository=repository)
+        else:
+            # リポジトリを受け付けないdockメソッドの場合は、通常のdockメソッドを呼び出す
+            results = self.dock(parameters)
+        
+        # 結果をコレクションに変換
+        collection = DockingResultCollection()
+        collection.extend(results)
+        
         return collection
