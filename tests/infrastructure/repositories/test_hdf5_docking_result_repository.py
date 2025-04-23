@@ -29,9 +29,24 @@ def hdf5_repo_append(tmp_path: Path) -> HDF5DockingResultRepository:
 @pytest.fixture
 def sample_result1(tmp_path: Path) -> DockingResult:
     """テスト用のサンプルDockingResult 1。"""
-    # result_pathは一時ファイルとして作成
+    # result_pathは一時ファイルとして作成し、内容を書き込む
     result_file = tmp_path / "proteinA_set1_0.sdf"
-    result_file.touch()
+    sdf_content = """
+HEADER    TEST COMPOUND
+REMARK    THIS IS A TEST SDF FILE
+@<TRIPOS>MOLECULE
+TEST
+   20    21     0     0     0
+SMALL
+USER_CHARGES
+
+@<TRIPOS>ATOM
+      1 C1         1.0000    0.0000    0.0000 C.3     1  MOL1        0.0000
+      2 C2         0.0000    1.0000    0.0000 C.3     1  MOL1        0.0000
+END
+    """
+    with open(result_file, "w") as f:
+        f.write(sdf_content)
     return DockingResult.create(  # ファクトリメソッドを使用
         result_path=result_file,
         protein_id="proteinA",
@@ -39,6 +54,7 @@ def sample_result1(tmp_path: Path) -> DockingResult:
         compound_index=0,
         docking_score=-9.5,
         protein_content_hash="protein_hash_1",
+        compound_content_hash="compound_hash_1",  # 必須パラメータ
         compoundset_content_hash="compound_hash_1",
         metadata={"pose_data": "pose data for compound1"},  # pose_dataをmetadataに含める
     )  # 閉じ括弧を追加
@@ -48,7 +64,22 @@ def sample_result1(tmp_path: Path) -> DockingResult:
 def sample_result2(tmp_path: Path) -> DockingResult:
     """テスト用のサンプルDockingResult 2。"""
     result_file = tmp_path / "proteinA_set1_1.sdf"
-    result_file.touch()
+    sdf_content = """
+HEADER    TEST COMPOUND 2
+REMARK    THIS IS A TEST SDF FILE FOR COMPOUND 2
+@<TRIPOS>MOLECULE
+TEST2
+   20    21     0     0     0
+SMALL
+USER_CHARGES
+
+@<TRIPOS>ATOM
+      1 C1         2.0000    0.0000    0.0000 C.3     1  MOL2        0.0000
+      2 C2         0.0000    2.0000    0.0000 C.3     1  MOL2        0.0000
+END
+    """
+    with open(result_file, "w") as f:
+        f.write(sdf_content)
     return DockingResult.create(
         result_path=result_file,
         protein_id="proteinA",
@@ -56,6 +87,7 @@ def sample_result2(tmp_path: Path) -> DockingResult:
         compound_index=1,  # 異なるインデックス
         docking_score=-8.0,
         protein_content_hash="protein_hash_1",
+        compound_content_hash="compound_hash_2",  # 必須パラメータ
         compoundset_content_hash="compound_hash_1",
         metadata={"pose_data": "pose data for compound2"},
     )  # 閉じ括弧を追加
@@ -65,7 +97,22 @@ def sample_result2(tmp_path: Path) -> DockingResult:
 def sample_result3(tmp_path: Path) -> DockingResult:
     """テスト用のサンプルDockingResult 3 (異なるタンパク質)。"""
     result_file = tmp_path / "proteinB_set2_0.sdf"
-    result_file.touch()
+    sdf_content = """
+HEADER    TEST COMPOUND 3
+REMARK    THIS IS A TEST SDF FILE FOR COMPOUND 3
+@<TRIPOS>MOLECULE
+TEST3
+   20    21     0     0     0
+SMALL
+USER_CHARGES
+
+@<TRIPOS>ATOM
+      1 C1         3.0000    0.0000    0.0000 C.3     1  MOL3        0.0000
+      2 C2         0.0000    3.0000    0.0000 C.3     1  MOL3        0.0000
+END
+    """
+    with open(result_file, "w") as f:
+        f.write(sdf_content)
     return DockingResult.create(
         result_path=result_file,
         protein_id="proteinB",  # 異なるタンパク質ID
@@ -73,6 +120,7 @@ def sample_result3(tmp_path: Path) -> DockingResult:
         compound_index=0,
         docking_score=-10.0,
         protein_content_hash="protein_hash_2",
+        compound_content_hash="compound_hash_3",  # 必須パラメータ
         compoundset_content_hash="compound_hash_2",
         metadata={"pose_data": "pose data for compound3"},
     )
@@ -105,7 +153,13 @@ class TestHDF5DockingResultRepository:
         assert loaded_result.compound_index == sample_result1.compound_index
         assert loaded_result.docking_score == sample_result1.docking_score
         assert loaded_result.get_metadata_value("pose_data") == sample_result1.get_metadata_value("pose_data")
-        assert loaded_result.result_path == sample_result1.result_path  # result_pathも確認
+
+        # SDFファイルの内容を確認
+        with open(sample_result1.result_path, "r") as f:
+            original_sdf_content = f.read()
+        with open(loaded_result.result_path, "r") as f:
+            loaded_sdf_content = f.read()
+        assert loaded_sdf_content == original_sdf_content  # SDFファイルの内容が一致することを確認
 
     def test_load_non_existent(self, hdf5_repo: HDF5DockingResultRepository):
         """存在しない結果をロードしようとするとNoneが返ることを確認する。"""
@@ -121,7 +175,22 @@ class TestHDF5DockingResultRepository:
 
         # 更新用のDockingResultを作成
         updated_result_path = tmp_path / "updated_proteinA_set1_0.sdf"
-        updated_result_path.touch()
+        updated_sdf_content = """
+HEADER    UPDATED TEST COMPOUND
+REMARK    THIS IS AN UPDATED TEST SDF FILE
+@<TRIPOS>MOLECULE
+UPDATED_TEST
+   20    21     0     0     0
+SMALL
+USER_CHARGES
+
+@<TRIPOS>ATOM
+      1 C1         5.0000    0.0000    0.0000 C.3     1  MOL1        0.0000
+      2 C2         0.0000    5.0000    0.0000 C.3     1  MOL1        0.0000
+END
+    """
+        with open(updated_result_path, "w") as f:
+            f.write(updated_sdf_content)
         updated_result = DockingResult.create(
             result_path=updated_result_path,  # パスも更新される可能性がある
             protein_id=sample_result1.protein_id,
@@ -129,6 +198,7 @@ class TestHDF5DockingResultRepository:
             compound_index=sample_result1.compound_index,
             docking_score=-10.0,  # スコア更新
             protein_content_hash=sample_result1.protein_content_hash,
+            compound_content_hash=sample_result1.compound_content_hash,  # 必須パラメータ
             compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated pose data"},  # メタデータ更新
         )
@@ -140,7 +210,13 @@ class TestHDF5DockingResultRepository:
         assert loaded_result is not None
         assert loaded_result.docking_score == -10.0
         assert loaded_result.get_metadata_value("pose_data") == "updated pose data"
-        assert loaded_result.result_path == updated_result_path  # result_pathが更新されていることを確認
+
+        # SDFファイルの内容を確認
+        with open(updated_result_path, "r") as f:
+            updated_sdf_content_read = f.read()
+        with open(loaded_result.result_path, "r") as f:
+            loaded_sdf_content = f.read()
+        assert loaded_sdf_content == updated_sdf_content_read  # SDFファイルの内容が一致することを確認
 
     def test_load_all(
         self,
@@ -199,9 +275,9 @@ class TestHDF5DockingResultRepository:
         assert hdf5_repo.load(result_id2) is not None
 
         # HDF5ファイル内部のグループが削除されているか確認 (オプション)
-        # グループパスを修正
-        group_path1 = f"/results/protein_{sample_result1.protein_content_hash}/compoundset_{sample_result1.compoundset_content_hash}/{sample_result1.compound_index}"
-        group_path2 = f"/results/protein_{sample_result2.protein_content_hash}/compoundset_{sample_result2.compoundset_content_hash}/{sample_result2.compound_index}"
+        # 新しいグループパス形式に修正
+        group_path1 = f"/results/{sample_result1.protein_content_hash}/{sample_result1.compound_content_hash}"
+        group_path2 = f"/results/{sample_result2.protein_content_hash}/{sample_result2.compound_content_hash}"
         with h5py.File(hdf5_repo.hdf5_file_path, "r") as f:
             assert group_path1 not in f
             assert group_path2 in f
@@ -228,6 +304,7 @@ class TestHDF5DockingResultRepository:
             compound_index=sample_result1.compound_index,
             docking_score=-11.0,
             protein_content_hash=sample_result1.protein_content_hash,
+            compound_content_hash=sample_result1.compound_content_hash,  # 必須パラメータ
             compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated via update method"},
         )
@@ -239,7 +316,13 @@ class TestHDF5DockingResultRepository:
         assert loaded_result is not None
         assert loaded_result.docking_score == -11.0
         assert loaded_result.get_metadata_value("pose_data") == "updated via update method"
-        assert loaded_result.result_path == updated_result_path
+        # 一時ファイルが使用されるため、パスは異なる
+        # 代わりにSDFファイルの内容を比較
+        with open(loaded_result.result_path, "r") as f:
+            loaded_sdf_content = f.read()
+        with open(updated_result_path, "r") as f:
+            updated_sdf_content = f.read()
+        assert loaded_sdf_content == updated_sdf_content
 
     def test_get_repository_type(self, hdf5_repo: HDF5DockingResultRepository):
         """get_repository_typeが正しく"hdf5"を返すことを確認する。"""
@@ -277,6 +360,7 @@ class TestHDF5DockingResultRepository:
             compound_index=sample_result1.compound_index,
             docking_score=-10.0,  # 異なるスコア
             protein_content_hash=sample_result1.protein_content_hash,
+            compound_content_hash=sample_result1.compound_content_hash,  # 必須パラメータ
             compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated pose data"},  # 異なるメタデータ
         )
@@ -292,7 +376,13 @@ class TestHDF5DockingResultRepository:
         assert loaded_result.get_metadata_value("pose_data") == sample_result1.get_metadata_value(
             "pose_data"
         )  # 元のメタデータが保持されている
-        assert loaded_result.result_path == sample_result1.result_path  # 元のパスが保持されている
+        # 一時ファイルが使用されるため、パスは異なる
+        # 代わりにSDFファイルの内容を比較
+        with open(loaded_result.result_path, "r") as f:
+            loaded_sdf_content = f.read()
+        with open(sample_result1.result_path, "r") as f:
+            original_sdf_content = f.read()
+        assert loaded_sdf_content == original_sdf_content  # 元のSDFファイルの内容が保持されている
 
     def test_update_always_overwrites(self, tmp_path: Path, sample_result1: DockingResult):
         """updateメソッドは常に上書きモードで動作することを確認する。"""
@@ -310,6 +400,7 @@ class TestHDF5DockingResultRepository:
             compound_index=sample_result1.compound_index,
             docking_score=-11.0,  # 異なるスコア
             protein_content_hash=sample_result1.protein_content_hash,
+            compound_content_hash=sample_result1.compound_content_hash,  # 必須パラメータ
             compoundset_content_hash=sample_result1.compoundset_content_hash,
             metadata={"pose_data": "updated via update method"},  # 異なるメタデータ
         )
@@ -323,7 +414,13 @@ class TestHDF5DockingResultRepository:
         assert loaded_result is not None
         assert loaded_result.docking_score == -11.0  # 更新されたスコア
         assert loaded_result.get_metadata_value("pose_data") == "updated via update method"  # 更新されたメタデータ
-        assert loaded_result.result_path == updated_result_path  # 更新されたパス
+        # 一時ファイルが使用されるため、パスは異なる
+        # 代わりにSDFファイルの内容を比較
+        with open(loaded_result.result_path, "r") as f:
+            loaded_sdf_content = f.read()
+        with open(updated_result_path, "r") as f:
+            updated_sdf_content = f.read()
+        assert loaded_sdf_content == updated_sdf_content  # 更新されたSDFファイルの内容
 
 
 # --- 並行性テスト用ヘルパー関数 ---

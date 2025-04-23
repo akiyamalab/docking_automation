@@ -57,22 +57,14 @@ class HDF5DockingResultRepository(DockingResultRepository):
 
     def _exists(
         self,
-        protein_id: str,
-        compound_set_id: str,
-        compound_index: int,
         protein_content_hash: str,
         compound_content_hash: str,
-        compoundset_content_hash: str = "",
     ) -> bool:
         """指定されたキーのデータが既に存在するかどうかを確認します。
 
         Args:
-            protein_id (str): タンパク質ID。
-            compound_set_id (str): 化合物セットID。
-            compound_index (int): 化合物インデックス。
             protein_content_hash (str): タンパク質ファイルの内容ハッシュ値。
             compound_content_hash (str): 化合物のハッシュ値。
-            compoundset_content_hash (str, optional): 化合物セットファイルの内容ハッシュ値（後方互換性のため）。
 
         Returns:
             bool: データが存在する場合はTrue、存在しない場合はFalse。
@@ -110,12 +102,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
 
         # 追記モードで、既にデータが存在する場合はスキップ
         if self.mode == "append" and self._exists(
-            docking_result.protein_id,
-            docking_result.compound_set_id,
-            docking_result.compound_index,
             docking_result.protein_content_hash,
             docking_result.compound_content_hash,
-            docking_result.compoundset_content_hash,
         ):
             logger.info(
                 f"追記モード: 既存のデータが存在するためスキップします: "
@@ -153,10 +141,19 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         if "docking_score" in group:
                             del group["docking_score"]
                         group.create_dataset("docking_score", data=docking_result.docking_score, dtype="f8")
-                        if "result_path" in group:
-                            del group["result_path"]
+                        # SDFファイルの内容を読み込む
+                        try:
+                            with open(docking_result.result_path, "r") as f:
+                                sdf_content = f.read()
+                        except Exception as e:
+                            logger.error(f"SDFファイルの読み込み中にエラーが発生しました: {e}", exc_info=True)
+                            raise ValueError(f"SDFファイルの読み込みに失敗しました: {docking_result.result_path}")
+
+                        # SDFファイルの内容を保存
+                        if "sdf_content" in group:
+                            del group["sdf_content"]
                         dt_str = h5py.string_dtype(encoding="utf-8")
-                        group.create_dataset("result_path", data=str(docking_result.result_path), dtype=dt_str)
+                        group.create_dataset("sdf_content", data=sdf_content, dtype=dt_str)
                         if "metadata" in group:
                             del group["metadata"]
                         metadata_json = json.dumps(docking_result.metadata)
@@ -256,25 +253,49 @@ class HDF5DockingResultRepository(DockingResultRepository):
                             if found_group is not None:
                                 break
 
-                    # 見つからなかった場合は従来のパス形式で検索
-                    # TODO: この書き換えを行った時点ではこのコードは他人に利用されていないので、後方互換性は不要
+                    # 新しいパス形式で検索（protein_content_hash/compound_content_hash）
                     if found_group is None:
-                        old_group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
-                        if old_group_path in f:
-                            found_group = f[old_group_path]
-                        else:
-                            logger.debug(f"指定された結果が見つかりません: {old_group_path}")
+                        # すべてのprotein_hash_*グループを検索
+                        for protein_hash in f["results"]:
+                            protein_group = f["results"][protein_hash]
+                            # すべてのcompound_hash_*グループを検索
+                            for compound_hash in protein_group:
+                                compound_group = protein_group[compound_hash]
+                                # 属性を確認
+                                if (
+                                    "protein_id" in compound_group.attrs
+                                    and "compound_set_id" in compound_group.attrs
+                                    and "compound_index" in compound_group.attrs
+                                    and compound_group.attrs["protein_id"] == protein_id
+                                    and compound_group.attrs["compound_set_id"] == compound_set_id
+                                    and compound_group.attrs["compound_index"] == compound_index
+                                ):
+                                    found_group = compound_group
+                                    break
+                            if found_group is not None:
+                                break
+
+                        if found_group is None:
+                            logger.debug(
+                                f"指定された結果が見つかりません: {protein_id}_{compound_set_id}_{compound_index}"
+                            )
                             return None
 
                     group = found_group
 
                     # データセットと属性から値を取得
                     docking_score = group["docking_score"][()]
-                    result_path_str = group["result_path"][()].decode("utf-8")
+                    sdf_content = group["sdf_content"][()].decode("utf-8")
                     metadata_json = group["metadata"][()].decode("utf-8")
                     metadata = json.loads(metadata_json)
                     result_id = group.attrs["id"]
                     version = group.attrs["version"]
+
+                    # 一時ファイルを作成
+                    import tempfile
+
+                    with tempfile.NamedTemporaryFile(suffix=".sdf", delete=False) as temp_file:
+                        temp_file.write(sdf_content.encode("utf-8"))
 
                     # DockingResultオブジェクトを再構築
                     # protein_content_hashとcompoundset_content_hashを取得
@@ -301,8 +322,11 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         protein_content_hash = parts[2]
                         compound_content_hash = parts[3]
 
+                    # 一時ファイルのパスを取得
+                    temp_path = Path(temp_file.name)
+
                     result = DockingResult(
-                        result_path=Path(result_path_str),
+                        result_path=temp_path,
                         protein_id=group.attrs["protein_id"],
                         compound_set_id=group.attrs["compound_set_id"],
                         compound_index=group.attrs["compound_index"],
@@ -349,61 +373,54 @@ class HDF5DockingResultRepository(DockingResultRepository):
                         return DockingResultCollection(results)
 
                     results_group = f["results"]
-                    for protein_group_name in results_group:
-                        protein_group = results_group[protein_group_name]
-                        for compound_set_group_name in protein_group:
-                            compound_set_group = protein_group[compound_set_group_name]
-                            for compound_index_str in compound_set_group:  # インデックスは文字列キーになっている
-                                compound_group = compound_set_group[compound_index_str]
+                    for protein_hash in results_group:
+                        protein_group = results_group[protein_hash]
+                        for compound_hash in protein_group:
+                            compound_group = protein_group[compound_hash]
 
-                                # データセットと属性から値を取得
-                                # DockingResultの属性名に合わせて修正
-                                docking_score = compound_group["docking_score"][()]
-                                result_path_str = compound_group["result_path"][()].decode("utf-8")
-                                metadata_json = compound_group["metadata"][()].decode("utf-8")
-                                metadata = json.loads(metadata_json)
-                                result_id = compound_group.attrs["id"]
-                                version = compound_group.attrs["version"]
+                            # データセットと属性から値を取得
+                            # DockingResultの属性名に合わせて修正
+                            docking_score = compound_group["docking_score"][()]
+                            sdf_content = compound_group["sdf_content"][()].decode("utf-8")
+                            metadata_json = compound_group["metadata"][()].decode("utf-8")
+                            metadata = json.loads(metadata_json)
+                            result_id = compound_group.attrs["id"]
+                            version = compound_group.attrs["version"]
 
-                                # DockingResultオブジェクトを再構築
-                                # protein_content_hashとcompoundset_content_hashを取得
-                                # グループパスから抽出するか、デフォルト値を使用
-                                group_path = compound_group.name
-                                parts = group_path.split("/")
+                            # 一時ファイルを作成
+                            import tempfile
 
-                                # パスから抽出を試みる
-                                protein_content_hash = "default_protein_hash"
-                                compoundset_content_hash = "default_compound_hash"
+                            with tempfile.NamedTemporaryFile(suffix=".sdf", delete=False) as temp_file:
+                                temp_file.write(sdf_content.encode("utf-8"))
 
-                                for part in parts:
-                                    if part.startswith("protein_"):
-                                        protein_content_hash = part.replace("protein_", "")
-                                    elif part.startswith("compoundset_"):
-                                        compoundset_content_hash = part.replace("compoundset_", "")
+                            # DockingResultオブジェクトを再構築
+                            # protein_content_hashとcompoundset_content_hashを取得
+                            # グループパスから抽出するか、デフォルト値を使用
+                            group_path = compound_group.name
+                            parts = group_path.split("/")
 
-                                # 化合物のハッシュ値を取得
-                                compound_content_hash = "default_compound_hash"
+                            # パスから抽出を試みる
+                            protein_content_hash = parts[2]  # /results/{protein_hash}/{compound_hash}
+                            compound_content_hash = parts[3]
+                            compoundset_content_hash = "default_compound_hash"  # 後方互換性のため
 
-                                # パスから抽出を試みる
-                                parts = group_path.split("/")
-                                if len(parts) >= 4:  # 新しいパス形式: /results/{protein_hash}/{compound_hash}
-                                    protein_content_hash = parts[2]
-                                    compound_content_hash = parts[3]
+                            # 一時ファイルのパスを取得
+                            temp_path = Path(temp_file.name)
 
-                                result = DockingResult(
-                                    result_path=Path(result_path_str),
-                                    protein_id=compound_group.attrs["protein_id"],
-                                    compound_set_id=compound_group.attrs["compound_set_id"],
-                                    compound_index=compound_group.attrs["compound_index"],  # 属性から取得
-                                    docking_score=docking_score,
-                                    protein_content_hash=protein_content_hash,
-                                    compound_content_hash=compound_content_hash,
-                                    compoundset_content_hash=compoundset_content_hash,
-                                    metadata=metadata,
-                                    id=result_id,
-                                    version=version,
-                                )
-                                results.append(result)
+                            result = DockingResult(
+                                result_path=temp_path,
+                                protein_id=compound_group.attrs["protein_id"],
+                                compound_set_id=compound_group.attrs["compound_set_id"],
+                                compound_index=compound_group.attrs["compound_index"],  # 属性から取得
+                                docking_score=docking_score,
+                                protein_content_hash=protein_content_hash,
+                                compound_content_hash=compound_content_hash,
+                                compoundset_content_hash=compoundset_content_hash,
+                                metadata=metadata,
+                                id=result_id,
+                                version=version,
+                            )
+                            results.append(result)
                     logger.info(f"{len(results)}件のドッキング結果をロードしました。")
 
         except TimeoutError:
@@ -432,40 +449,37 @@ class HDF5DockingResultRepository(DockingResultRepository):
             with lock.acquire(timeout=60):
                 logger.debug(f"ロック取得 (削除): {self.lock_file_path}")
                 with h5py.File(self.hdf5_file_path, "a") as f:  # 書き込みモードで開く
-                    # 新しいパス形式と従来のパス形式の両方を試す
-                    # まず新しいパス形式で検索
+                    # 新しいパス形式で検索
                     found = False
                     group_path = ""
 
                     if "results" in f:
                         results_group = f["results"]
-                        for protein_group_name in results_group:
-                            if not protein_group_name.startswith("protein_"):
-                                continue
-
-                            protein_group = results_group[protein_group_name]
-                            for compound_set_group_name in protein_group:
-                                if not compound_set_group_name.startswith("compoundset_"):
-                                    continue
-
-                                compound_set_group = protein_group[compound_set_group_name]
-                                if str(compound_index) in compound_set_group:
-                                    # 属性を確認
-                                    compound_group = compound_set_group[str(compound_index)]
-                                    if (
-                                        compound_group.attrs["protein_id"] == protein_id
-                                        and compound_group.attrs["compound_set_id"] == compound_set_id
-                                    ):
-                                        group_path = compound_group.name
-                                        found = True
-                                        break
-
+                        for protein_hash in results_group:
+                            protein_group = results_group[protein_hash]
+                            for compound_hash in protein_group:
+                                compound_group = protein_group[compound_hash]
+                                # 属性を確認
+                                if (
+                                    "protein_id" in compound_group.attrs
+                                    and "compound_set_id" in compound_group.attrs
+                                    and "compound_index" in compound_group.attrs
+                                    and compound_group.attrs["protein_id"] == protein_id
+                                    and compound_group.attrs["compound_set_id"] == compound_set_id
+                                    and compound_group.attrs["compound_index"] == compound_index
+                                ):
+                                    group_path = compound_group.name
+                                    found = True
+                                    break
                             if found:
                                 break
 
-                    # 見つからなかった場合は従来のパス形式で検索
+                    # 見つからなかった場合は従来のパス形式で検索（後方互換性のため）
                     if not found:
-                        group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
+                        old_group_path = f"/results/{protein_id}/{compound_set_id}/{compound_index}"
+                        if old_group_path in f:
+                            group_path = old_group_path
+                            found = True
                     if group_path in f:
                         del f[group_path]
                         logger.info(f"ドッキング結果を削除しました: {group_path}")
