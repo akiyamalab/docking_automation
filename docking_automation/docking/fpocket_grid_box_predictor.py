@@ -222,6 +222,9 @@ class FpocketGridBoxPredictor:
         if box_size < 10:
             print(f"警告: ドッキング範囲のサイズが小さすぎるため、最小サイズ10に調整します（元のサイズ: {box_size}）")
             box_size = 10
+        if box_size > 30:
+            print(f"警告: ドッキング範囲のサイズが大きすぎるため、最大サイズ30に調整します（元のサイズ: {box_size}）")
+            box_size = 30
 
         # すべての方向に同じサイズを使用
         size = np.array([box_size, box_size, box_size], dtype=np.float64)

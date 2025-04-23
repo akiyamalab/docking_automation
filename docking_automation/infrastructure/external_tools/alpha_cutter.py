@@ -238,7 +238,7 @@ for pdb in filepath_list:
         # separate, save
         ppdb.df["ATOM"] = chain_df
         pdb_sep = pdb.replace(".pdb", "") + "_chain" + chain_id + ".pdb"
-        ppdb.to_pdb(path=pdb_sep, records=["ATOM"], gz=False, append_newline=True)
+        ppdb.to_pdb(path=pdb_sep, records=["OTHERS", "ATOM"], gz=False, append_newline=True)
 
         # DSSP
         p = PDBParser()
