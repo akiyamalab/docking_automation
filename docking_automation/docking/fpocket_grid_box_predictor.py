@@ -72,10 +72,16 @@ class FpocketGridBoxPredictor:
 
             try:
                 # fpocketを実行
-                output_pdb_path = self._run_fpocket(protein.path, temp_dir)
+                try:
+                    output_pdb_path = self._run_fpocket(protein.path, temp_dir)
+                except ValueError as e:
+                    raise ValueError(f"タンパク質 {protein.id} のfpocket実行に失敗しました: {e}")
 
                 # fpocketの出力を解析
-                pocket_coords = self._parse_fpocket_output(output_pdb_path)
+                try:
+                    pocket_coords = self._parse_fpocket_output(output_pdb_path)
+                except ValueError as e:
+                    raise ValueError(f"タンパク質 {protein.id} のポケット検出に失敗しました: {e}")
 
                 # 利用可能なポケットのランクを取得
                 available_ranks = sorted(pocket_coords.keys())
@@ -126,7 +132,9 @@ class FpocketGridBoxPredictor:
         cmd = [
             "fpocket",
             "-f",
-            str(protein_path.relative_to(Path.cwd())),  # 絶対パスを使用
+            str(
+                protein_path.relative_to(Path.cwd())
+            ),  # 相対パスを使用（注: 絶対パスが長い場合にfpocketが適切に動作しない場合があるため）
         ]
 
         try:
@@ -188,7 +196,7 @@ class FpocketGridBoxPredictor:
                         continue
 
         if not pocket_coords:
-            raise ValueError(f"STP残基が見つかりません: {output_pdb_path}")
+            raise ValueError(f"STP残基が見つかりません（ポケットが検出されませんでした）: {output_pdb_path}")
 
         return pocket_coords
 

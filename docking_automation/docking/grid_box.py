@@ -153,7 +153,7 @@ class GridBox:
         return f"{self.__size[0]:.3f}, {self.__size[1]:.3f}, {self.__size[2]:.3f}"
 
     @classmethod
-    def from_fpocket(cls, protein: Protein, pocket_rank: int = 1, keep_temp_files: bool = False) -> "GridBox":
+    def from_fpocket(cls, protein: Protein, pocket_rank: int = 1, keep_temp_files: bool = False) -> Optional["GridBox"]:
         """
         fpocketを使用してタンパク質のポケット位置を予測し、GridBoxを生成する。
 
@@ -163,22 +163,26 @@ class GridBox:
             keep_temp_files: 一時ファイルを保持するかどうか。デバッグ目的で使用。
 
         Returns:
-            予測されたGridBoxオブジェクト
-
-        Raises:
-            ValueError: fpocketの実行に失敗した場合や、指定されたランクのポケットが見つからない場合
+            予測されたGridBoxオブジェクト、またはfpocketが失敗した場合はNone
         """
         # 循環インポートを避けるため、実行時にインポート
         from docking_automation.docking.fpocket_grid_box_predictor import (
             FpocketGridBoxPredictor,
         )
 
-        # FpocketGridBoxPredictorを内部実装として使用
-        predictor = FpocketGridBoxPredictor(keep_temp_files=keep_temp_files)
-        return predictor.predict(protein, pocket_rank)
+        try:
+            # FpocketGridBoxPredictorを内部実装として使用
+            predictor = FpocketGridBoxPredictor(keep_temp_files=keep_temp_files)
+            return predictor.predict(protein, pocket_rank)
+        except ValueError as e:
+            # fpocketの実行に失敗した場合や、指定されたランクのポケットが見つからない場合
+            print(f"[警告] タンパク質 {protein.id} のfpocket解析に失敗しました: {e}")
+            return None
 
     @classmethod
-    def from_fpocket_all(cls, protein: Protein, max_pockets: int = 3, keep_temp_files: bool = False) -> List["GridBox"]:
+    def from_fpocket_all(
+        cls, protein: Protein, max_pockets: int = 3, keep_temp_files: bool = False
+    ) -> Optional[List["GridBox"]]:
         """
         fpocketを使用してタンパク質の複数のポケット位置を予測し、GridBoxのリストを生成する。
 
@@ -188,19 +192,21 @@ class GridBox:
             keep_temp_files: 一時ファイルを保持するかどうか。デバッグ目的で使用。
 
         Returns:
-            予測されたGridBoxオブジェクトのリスト
-
-        Raises:
-            ValueError: fpocketの実行に失敗した場合
+            予測されたGridBoxオブジェクトのリスト、またはfpocketが失敗した場合はNone
         """
         # 循環インポートを避けるため、実行時にインポート
         from docking_automation.docking.fpocket_grid_box_predictor import (
             FpocketGridBoxPredictor,
         )
 
-        # FpocketGridBoxPredictorを内部実装として使用
-        predictor = FpocketGridBoxPredictor(keep_temp_files=keep_temp_files)
-        return predictor.predict_all(protein, max_pockets)
+        try:
+            # FpocketGridBoxPredictorを内部実装として使用
+            predictor = FpocketGridBoxPredictor(keep_temp_files=keep_temp_files)
+            return predictor.predict_all(protein, max_pockets)
+        except ValueError as e:
+            # fpocketの実行に失敗した場合や、指定されたランクのポケットが見つからない場合
+            print(f"[警告] タンパク質 {protein.id} のfpocket解析に失敗しました: {e}")
+            return None
 
     @classmethod
     def from_crystal_ligand(cls, crystal_ligand: CompoundSet) -> "GridBox":

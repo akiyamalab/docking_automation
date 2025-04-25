@@ -162,9 +162,7 @@ def run_docking(
             # HDF5リポジトリを初期化
             repository_factory = DockingResultRepositoryFactory()
             repository = repository_factory.create(
-                repository_type=RepositoryType.HDF5,
-                base_directory=repository_dir,
-                config={"mode": "append"}
+                repository_type=RepositoryType.HDF5, base_directory=repository_dir, config={"mode": "append"}
             )
             print(f"[Protein:{protein.id}] リポジトリを初期化しました: {repository_dir}")
         except Exception as e:
@@ -174,7 +172,7 @@ def run_docking(
 
     # ドッキング計算を実行
     docking_tool = AutoDockVina()
-    
+
     # リポジトリが指定されている場合は、再利用機能を使用
     if repository is not None and isinstance(repository, HDF5DockingResultRepository):
         print(f"[Protein:{protein.id}] 計算結果の再利用機能を使用します")
@@ -198,10 +196,12 @@ def run_docking(
     for i, result in enumerate(results):
         # DockingResultクラスのcompound_indexフィールドを直接修正
         result.compound_index = start_index + i
-        
+
         # 再利用されたかどうかを示すメタデータを追加
         if "reused" in result.metadata and result.metadata["reused"]:
-            print(f"[Protein:{protein.id}] 化合物 {result.compound_index} の結果を再利用しました（スコア: {result.docking_score}）")
+            print(
+                f"[Protein:{protein.id}] 化合物 {result.compound_index} の結果を再利用しました（スコア: {result.docking_score}）"
+            )
 
     # NumPy配列をリストに変換
     for result in results:
@@ -250,6 +250,9 @@ def run_parallel_docking():
     # ドッキング計算タスクの作成
     docking_tasks: list[Task] = []
 
+    # スキップされたタンパク質の情報を記録
+    skipped_proteins = []
+
     # 各セグメントに対してドッキング範囲の推定とドッキングタスクの作成
     grid_boxes = {}
     print("\n=== タンパク質・セグメントごとのドッキング範囲推定 ===")
@@ -258,6 +261,14 @@ def run_parallel_docking():
         # GridBoxの取得
         print(f"\nタンパク質: {protein_name}, セグメント {i + 1} ({protein.id}) のドッキング範囲を推定中...")
         grid_box = GridBox.from_fpocket(protein)
+
+        # fpocketが失敗した場合はこのタンパク質をスキップ
+        if grid_box is None:
+            print(
+                f"タンパク質: {protein_name}, セグメント {i + 1} ({protein.id}) のドッキング計算をスキップします（ポケット検出失敗）"
+            )
+            skipped_proteins.append((protein_name, protein.id, i + 1))
+            continue
 
         # グリッドボックス情報の表示
         print(str(grid_box))
@@ -359,6 +370,13 @@ def run_parallel_docking():
         except Exception as e:
             print(f"  SDFファイルへのエクスポート中にエラーが発生しました: {e}")
 
+    # スキップされたタンパク質の情報を表示
+    if skipped_proteins:
+        print("\n=== スキップされたタンパク質 ===")
+        for protein_name, protein_id, segment_index in skipped_proteins:
+            print(f"タンパク質: {protein_name}, セグメント {segment_index} ({protein_id})")
+        print(f"合計: {len(skipped_proteins)}個のタンパク質がスキップされました")
+
     # 統合された結果からトップヒットも表示
     combined_results = DockingResultCollection()
     for data in protein_segment_results.values():
@@ -366,6 +384,8 @@ def run_parallel_docking():
 
     # 統合結果のサマリーを表示
     print("\n=== 全タンパク質・セグメント統合の結果 ===")
+    print(f"処理されたタンパク質数: {len(all_segmented_proteins) - len(skipped_proteins)}")
+    print(f"スキップされたタンパク質数: {len(skipped_proteins)}")
     print(combined_results.summarize())
 
     # 上位ヒットの詳細情報を表示
