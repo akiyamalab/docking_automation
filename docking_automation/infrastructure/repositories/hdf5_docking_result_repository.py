@@ -76,7 +76,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
             return False
 
         try:
-            with h5py.File(self.hdf5_file_path, "r") as f:
+            # swmrモード（Single Writer Multiple Reader）を使用
+            with h5py.File(self.hdf5_file_path, "r", swmr=True) as f:
                 # 新しいパス形式
                 new_group_path = f"/results/{protein_content_hash}/{compound_content_hash}"
                 return new_group_path in f
@@ -352,11 +353,7 @@ class HDF5DockingResultRepository(DockingResultRepository):
                 lock.release()
                 logger.debug(f"ロック解放 (読み込み): {self.lock_file_path}")
 
-    def load_by_hashes(
-        self,
-        protein_content_hash: str,
-        compound_content_hash: str
-    ) -> Optional[DockingResult]:
+    def load_by_hashes(self, protein_content_hash: str, compound_content_hash: str) -> Optional[DockingResult]:
         """タンパク質と化合物のハッシュ値に基づいてドッキング結果をロードします。
 
         Args:
@@ -383,13 +380,13 @@ class HDF5DockingResultRepository(DockingResultRepository):
                 with h5py.File(self.hdf5_file_path, "r") as f:
                     # 新しいパス形式で検索
                     group_path = f"/results/{protein_content_hash}/{compound_content_hash}"
-                    
+
                     if group_path not in f:
                         logger.debug(f"指定されたパスが存在しません: {group_path}")
                         return None
-                    
+
                     group = f[group_path]
-                    
+
                     # データセットと属性から値を取得
                     docking_score = group["docking_score"][()]
                     sdf_content = group["sdf_content"][()].decode("utf-8")
