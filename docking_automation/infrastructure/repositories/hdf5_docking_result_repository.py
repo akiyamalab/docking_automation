@@ -102,7 +102,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
 
         try:
             # SWMRモードで書き込み
-            with h5py.File(self.hdf5_file_path, "a", libver="latest", swmr=True) as f:
+            with h5py.File(self.hdf5_file_path, "a", libver="latest") as f:
+                f.swmr_mode = True
                 # 新しいグループパス: /results/{protein_content_hash}/{compound_content_hash}
                 group_path = f"/results/{docking_result.protein_content_hash}/{docking_result.compound_content_hash}"
 
@@ -453,7 +454,8 @@ class HDF5DockingResultRepository(DockingResultRepository):
         """
         try:
             # SWMRモードで書き込み
-            with h5py.File(self.hdf5_file_path, "a", libver="latest", swmr=True) as f:
+            with h5py.File(self.hdf5_file_path, "a", libver="latest") as f:
+                f.swmr_mode = True
                 # 新しいパス形式で検索
                 found = False
                 group_path = ""
