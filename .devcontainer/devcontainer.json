@@ -2,4 +2,5 @@
     "runArgs": [],
     "name": "docking_automation",
     "dockerFile": "Dockerfile",
+    "postCreateCommand": "cd /workspaces/20260422_mouse_docking/docking_automation && pip install -e ."
 }

@@ -6,7 +6,19 @@ RUN apt install -y wget openssh-client
 
 #### Anaconda ####
 RUN mamba install -y -c conda-forge openbabel=3.1.1
-RUN mamba install -y -c conda-forge fpocket
+# fpocket: conda-forgeパッケージが利用可能な場合はそちらを優先、
+# 環境によってはソースビルドで対応（後段のRUN参照）
+RUN mamba install -y -c conda-forge fpocket || true
+
+#### fpocket source build (conda失敗時のフォールバック) ####
+RUN apt-get install -y cmake gcc g++ git \
+    && git clone https://github.com/Discngine/fpocket.git /tmp/fpocket \
+    && cd /tmp/fpocket && make -j$(nproc) \
+    && cp /tmp/fpocket/bin/fpocket /usr/local/bin/fpocket \
+    && cp /tmp/fpocket/bin/dpocket /usr/local/bin/dpocket \
+    && cp /tmp/fpocket/bin/tpocket /usr/local/bin/tpocket \
+    && cp /tmp/fpocket/bin/mdpocket /usr/local/bin/mdpocket \
+    && rm -rf /tmp/fpocket
 
 #### AutoDock Vina ####
 RUN pip install vina
