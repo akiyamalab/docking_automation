@@ -213,6 +213,7 @@ def _fake_dock_one_protein(
     exhaustiveness=1,
     top_n_poses=1,
     backend="vina",
+    search_mode="balance",
 ):
     """テスト用: ファイルアクセスなしに即座にフェイク結果を返す。"""
     import gzip

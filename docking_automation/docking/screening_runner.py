@@ -39,6 +39,20 @@ def _make_docking_tool(backend: str):
         raise ValueError(f"Unknown backend: {backend}")
 
 
+def _parse_unidock_score_from_pdbqt(pdbqt_path) -> Optional[float]:
+    """UniDock出力PDBQTからVINAスコアを取得する。"""
+    for line in pdbqt_path.read_text().splitlines():
+        if "VINA RESULT" in line:
+            parts = line.split()
+            for i, p in enumerate(parts):
+                if p.rstrip(":") == "RESULT" and i + 1 < len(parts):
+                    try:
+                        return float(parts[i + 1])
+                    except ValueError:
+                        pass
+    return None
+
+
 def dock_one_protein(
     protein_path: str,
     protein_id: str,
@@ -51,12 +65,16 @@ def dock_one_protein(
     exhaustiveness: int = 1,
     top_n_poses: int = 1,
     backend: str = "vina",
+    search_mode: str = "balance",
 ) -> List[dict]:
     """1タンパク質の指定化合物群ドッキングをDaskワーカーで実行する。
 
     HDF5は一切書かない。結果をdictのリストとして返す。
+    backend="vina": AutoDock Vina Python API (逐次)
+    backend="unidock": UniDock CLI バッチ実行 (GPU)
     """
     import gzip as gz
+    import subprocess
     import tempfile
     import time
     from pathlib import Path
@@ -67,7 +85,6 @@ def dock_one_protein(
     from docking_automation.converters.molecule_converter import MoleculeConverter
     from docking_automation.infrastructure.utilities.file_utils import read_compounds_from_sdf
     from docking_automation.molecule.protein import Protein
-    from vina import Vina
 
     converter = MoleculeConverter()
     temp_dir = Path(tempfile.mkdtemp())
@@ -103,6 +120,110 @@ def dock_one_protein(
                 compound_pdbqt_map[i] = compound_pdbqt
             except Exception:
                 compound_pdbqt_map[i] = None
+
+    if backend == "unidock":
+        # UniDock: 全有効リガンドを一括バッチ処理
+        valid_indices = [i for i in compound_indices if compound_pdbqt_map.get(i) is not None]
+
+        out_dir = temp_dir / "unidock_out"
+        out_dir.mkdir()
+
+        results = []
+        if valid_indices:
+            ligand_index_path = temp_dir / "ligands.txt"
+            ligand_index_path.write_text(
+                "\n".join(str(compound_pdbqt_map[i]) for i in valid_indices) + "\n"
+            )
+
+            cx, cy, cz = [float(c) for c in grid_center]
+            sx, sy, sz = [float(s) for s in grid_size]
+            cmd = [
+                "unidock",
+                "--receptor", str(pdbqt_path),
+                "--ligand_index", str(ligand_index_path),
+                "--center_x", str(cx), "--center_y", str(cy), "--center_z", str(cz),
+                "--size_x", str(sx), "--size_y", str(sy), "--size_z", str(sz),
+                "--search_mode", search_mode,
+                "--num_modes", "1",
+                "--seed", "1",
+                "--verbosity", "0",
+                "--dir", str(out_dir),
+            ]
+
+            t0 = time.monotonic()
+            subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+            elapsed_total = time.monotonic() - t0
+            elapsed_per = round(elapsed_total / len(valid_indices), 3)
+        else:
+            elapsed_per = 0.0
+
+        for idx in compound_indices:
+            c_hash = compound_hashes.get(idx)
+            if compound_pdbqt_map.get(idx) is None:
+                results.append({
+                    "protein_id": protein_id,
+                    "compound_index": idx,
+                    "protein_content_hash": protein_content_hash,
+                    "compound_content_hash": c_hash,
+                    "score": None,
+                    "pose_blob": None,
+                    "elapsed_sec": 0.0,
+                    "error": "compound_pdbqt_conversion_failed",
+                })
+                continue
+
+            stem = compound_pdbqt_map[idx].stem
+            out_pdbqt = out_dir / f"{stem}_out.pdbqt"
+
+            if not out_pdbqt.exists():
+                results.append({
+                    "protein_id": protein_id,
+                    "compound_index": idx,
+                    "protein_content_hash": protein_content_hash,
+                    "compound_content_hash": c_hash,
+                    "score": None,
+                    "pose_blob": None,
+                    "elapsed_sec": elapsed_per,
+                    "error": "unidock_output_missing",
+                })
+                continue
+
+            score = _parse_unidock_score_from_pdbqt(out_pdbqt)
+            if score is None:
+                results.append({
+                    "protein_id": protein_id,
+                    "compound_index": idx,
+                    "protein_content_hash": protein_content_hash,
+                    "compound_content_hash": c_hash,
+                    "score": None,
+                    "pose_blob": None,
+                    "elapsed_sec": elapsed_per,
+                    "error": "unidock_score_parse_failed",
+                })
+                continue
+
+            out_sdf = out_dir / f"{stem}_out.sdf"
+            try:
+                converter.pdbqt_to_sdf(out_pdbqt, out_sdf)
+                pose_blob = gz.compress(out_sdf.read_bytes(), compresslevel=9)
+            except Exception:
+                pose_blob = gz.compress(out_pdbqt.read_bytes(), compresslevel=9)
+
+            results.append({
+                "protein_id": protein_id,
+                "compound_index": idx,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": c_hash,
+                "score": score,
+                "pose_blob": pose_blob,
+                "elapsed_sec": elapsed_per,
+                "error": None,
+            })
+
+        return results
+
+    # --- Vina path ---
+    from vina import Vina
 
     v = Vina(cpu=1, seed=1, verbosity=0)
     v.set_receptor(str(pdbqt_path))
@@ -185,6 +306,7 @@ class ScreeningRunner:
         compression: str = "gzip",
         grid_box_missing_policy: str = "skip",
         backend: str = "vina",
+        search_mode: str = "balance",
         _dock_fn: Optional[Callable] = None,
         _cluster_kwargs: Optional[dict] = None,
     ) -> None:
@@ -200,6 +322,7 @@ class ScreeningRunner:
         self.compression = compression
         self.grid_box_missing_policy = grid_box_missing_policy
         self.backend = backend
+        self.search_mode = search_mode
         self._dock_fn = _dock_fn
         self._cluster_kwargs = _cluster_kwargs or {}
 
@@ -317,6 +440,7 @@ class ScreeningRunner:
                 self.exhaustiveness,
                 self.top_n_poses,
                 backend=self.backend,
+                search_mode=self.search_mode,
             )
             futures[future] = protein_id
 

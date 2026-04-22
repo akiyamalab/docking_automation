@@ -181,7 +181,7 @@ def _parse_unidock_score(pdbqt_path: Path) -> float | None:
         if "REMARK VINA RESULT" in line or "REMARK  VINA RESULT" in line:
             parts = line.split()
             for i, p in enumerate(parts):
-                if p in ("RESULT", "VINA") and i + 1 < len(parts):
+                if p.rstrip(":") in ("RESULT", "VINA") and i + 1 < len(parts):
                     try:
                         return float(parts[i + 1])
                     except ValueError:
