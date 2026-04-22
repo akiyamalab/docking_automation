@@ -149,6 +149,82 @@ from docking_automation.docking import DockingResultCollection
 loaded_results = DockingResultCollection.load_from_csv("docking_results.csv")
 ```
 
+## Phase 0 PoC: N×M Docking Execution
+
+### Purpose
+
+Phase 0 PoC validates the core N×M docking automation pipeline with a 10-protein × 10-compound (100 pairs) dataset, verifying HDF5 idempotency and incremental compound expansion.
+
+### Prerequisites
+
+- Python 3.10+
+- AutoDock Vina Python binding: `pip install vina`
+- Open Babel 3.1.0+: `apt install openbabel` or `conda install -c conda-forge openbabel`
+- RDKit 2023.09+: `conda install -c conda-forge rdkit`
+- HDF5 support: `pip install h5py`
+
+Install all dependencies:
+
+```bash
+pip install -e .
+```
+
+### Running the PoC
+
+```bash
+cd /path/to/docking_automation
+
+# Run1: initial 100-pair docking (exhaustiveness=4, ~20 min)
+python examples/run_nxm_poc.py \
+    --proteins examples/proteins/ \
+    --compounds examples/actives_subset.sdf \
+    --output examples/output/nxm_poc_hdf5 \
+    --exhaustiveness 4
+
+# Run2: idempotency check — all 100 pairs should be skipped (~3.5 s)
+python examples/run_nxm_poc.py \
+    --proteins examples/proteins/ \
+    --compounds examples/actives_subset.sdf \
+    --output examples/output/nxm_poc_hdf5 \
+    --exhaustiveness 4
+
+# Run3: incremental expansion to 20 compounds
+python examples/run_nxm_poc.py \
+    --proteins examples/proteins/ \
+    --compounds examples/actives_extended20.sdf \
+    --output examples/output/nxm_poc_hdf5 \
+    --exhaustiveness 4
+```
+
+### Expected Output
+
+**Run1** computes 100 new docking pairs and writes results to an HDF5 store:
+
+```
+=== N×M ドッキングPoC サマリ ===
+総ペア数:        100
+新規ドッキング:  100
+再利用:          0
+総経過時間:      1219.1s
+平均ドッキング時間: 12.15s/ペア
+平均スコア:      -5.933
+```
+
+**Run2** skips all 100 previously computed pairs via HDF5 cache:
+
+```
+総ペア数:        100 / 新規ドッキング: 0 / 再利用: 100 / 経過時間: ~3.5s
+```
+
+**Run3** (with 20 compounds) computes only the 100 new pairs while reusing the original 100 cached results.
+
+Full results are saved to:
+- `examples/output/nxm_poc_hdf5/` — HDF5 result store
+- `examples/output/nxm_poc_metrics.jsonl` — per-pair timing and scores
+- `examples/output/nxm_poc_summary.txt` — run summary
+
+See [docs/poc_report.md](docs/poc_report.md) for a detailed PoC analysis report.
+
 ## トラブルシューティング
 
 
