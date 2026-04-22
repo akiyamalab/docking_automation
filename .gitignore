@@ -64,3 +64,13 @@ htmlcov/
 
 # AFDB データ（大容量バイナリ）
 data/afdb/
+
+# HDF5 ドッキング結果キャッシュ
+*.h5
+*.hdf5
+
+# E2E / PoC 実行出力
+examples/output/
+
+# 一時ディレクトリ
+tmp/
