@@ -100,7 +100,7 @@ class ProteinSet:
         root_path = Path(root)
         skipped_path = root_path.parent / "skipped_large.txt"
 
-        files = sorted(root_path.glob("*.pdb"))
+        files = sorted(root_path.rglob("*.pdb"))
         proteins: List[Protein] = []
         skipped: List[str] = []
 
