@@ -31,6 +31,7 @@ class TestDockingResultCollection:
                         compound_index=compound_idx,
                         docking_score=score,
                         protein_content_hash=f"protein_hash_{protein_idx}",
+                        compound_content_hash=f"compound_content_hash_{compound_idx}",
                         compoundset_content_hash=f"compound_hash_{compound_set_idx}",
                         metadata={"score": score},
                     )
@@ -61,6 +62,7 @@ class TestDockingResultCollection:
                 compound_index=0,
                 docking_score=-8.5,
                 protein_content_hash="protein_hash_test",
+                compound_content_hash="compound_content_hash_test",
                 compoundset_content_hash="compound_hash_test",
             ),
             DockingResult(
@@ -70,6 +72,7 @@ class TestDockingResultCollection:
                 compound_index=1,
                 docking_score=-7.5,
                 protein_content_hash="protein_hash_test",
+                compound_content_hash="compound_content_hash_test",
                 compoundset_content_hash="compound_hash_test",
             ),
         ]
