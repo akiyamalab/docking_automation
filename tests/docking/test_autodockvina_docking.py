@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from docking_automation.docking import DockingResult
@@ -36,6 +37,7 @@ class TestDockingResult:
             compound_index=compound_index,
             docking_score=docking_score,
             protein_content_hash=protein_content_hash,
+            compound_content_hash="test_compound_content_hash",
             compoundset_content_hash=compoundset_content_hash,
             metadata=metadata,
         )
@@ -53,7 +55,7 @@ def mock_vina():
     with patch("docking_automation.docking.autodockvina_docking.Vina") as mock_vina:
         # モックVinaインスタンスの設定
         mock_vina_instance = MagicMock()
-        mock_vina_instance.energies.return_value = [[[-8.0]]]
+        mock_vina_instance.energies.return_value = np.array([[-8.0]])
         mock_vina.return_value = mock_vina_instance
         yield mock_vina
 
@@ -208,11 +210,12 @@ class TestAutoDockVina:
         vina._preprocess_compound_set = MagicMock(return_value=mock_compound_set)
         
         # dockメソッドをモック
-        vina.dock = MagicMock(return_value=[
-            MagicMock(spec=DockingResult),
-            MagicMock(spec=DockingResult)
-        ])
-        
+        mock_result_1 = MagicMock(spec=DockingResult)
+        mock_result_1.docking_score = -8.0
+        mock_result_2 = MagicMock(spec=DockingResult)
+        mock_result_2.docking_score = -7.0
+        vina.dock = MagicMock(return_value=[mock_result_1, mock_result_2])
+
         # run_dockingメソッドを実行
         result_collection = vina.run_docking(
             protein=MagicMock(spec=Protein),
@@ -238,11 +241,12 @@ class TestAutoDockVina:
         vina._preprocess_compound_set = MagicMock(return_value=mock_compound_set)
         
         # dockメソッドをモック
-        vina.dock = MagicMock(return_value=[
-            MagicMock(spec=DockingResult),
-            MagicMock(spec=DockingResult)
-        ])
-        
+        mock_result_1 = MagicMock(spec=DockingResult)
+        mock_result_1.docking_score = -8.0
+        mock_result_2 = MagicMock(spec=DockingResult)
+        mock_result_2.docking_score = -7.0
+        vina.dock = MagicMock(return_value=[mock_result_1, mock_result_2])
+
         # run_dockingメソッドを実行
         result_collection = vina.run_docking(
             protein=MagicMock(spec=Protein),
