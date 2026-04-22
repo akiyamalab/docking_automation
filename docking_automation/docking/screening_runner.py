@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, List, TYPE_CHECKING
+from typing import Any, Callable, Dict, Iterator, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from docking_automation.molecule.protein_set import ProteinSet
@@ -27,8 +27,136 @@ class ScreeningResult:
     log_path: Path
 
 
+def dock_one_protein(
+    protein_path: str,
+    protein_id: str,
+    protein_content_hash: str,
+    compound_sdf_path: str,
+    compound_indices: List[int],
+    compound_hashes: Dict[int, str],
+    grid_center: List[float],
+    grid_size: List[float],
+    exhaustiveness: int = 1,
+    top_n_poses: int = 1,
+) -> List[dict]:
+    """1タンパク質の指定化合物群ドッキングをDaskワーカーで実行する。
+
+    HDF5は一切書かない。結果をdictのリストとして返す。
+    """
+    import gzip as gz
+    import tempfile
+    import time
+    from pathlib import Path
+
+    if not compound_indices:
+        return []
+
+    from docking_automation.converters.molecule_converter import MoleculeConverter
+    from docking_automation.infrastructure.utilities.file_utils import read_compounds_from_sdf
+    from docking_automation.molecule.protein import Protein
+    from vina import Vina
+
+    converter = MoleculeConverter()
+    temp_dir = Path(tempfile.mkdtemp())
+
+    protein_obj = Protein(Path(protein_path), id=protein_id)
+    pdbqt_path = temp_dir / f"{protein_id}.pdbqt"
+    try:
+        converter.protein_to_pdbqt(protein_obj, pdbqt_path)
+    except Exception as e:
+        return [
+            {
+                "protein_id": protein_id,
+                "compound_index": idx,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": compound_hashes.get(idx),
+                "score": None,
+                "pose_blob": None,
+                "elapsed_sec": 0.0,
+                "error": f"protein_pdbqt_failed: {e}",
+            }
+            for idx in compound_indices
+        ]
+
+    index_set = set(compound_indices)
+    compound_pdbqt_map: Dict[int, Optional[Path]] = {}
+    for i, (_, lines) in enumerate(read_compounds_from_sdf(Path(compound_sdf_path))):
+        if i in index_set:
+            compound_sdf = temp_dir / f"compound_{i}.sdf"
+            compound_sdf.write_text("".join(str(l) for l in lines))
+            compound_pdbqt = temp_dir / f"compound_{i}.pdbqt"
+            try:
+                converter.sdf_to_pdbqt(compound_sdf, compound_pdbqt)
+                compound_pdbqt_map[i] = compound_pdbqt
+            except Exception:
+                compound_pdbqt_map[i] = None
+
+    v = Vina(cpu=1, seed=1, verbosity=0)
+    v.set_receptor(str(pdbqt_path))
+    v.compute_vina_maps(
+        center=[float(c) for c in grid_center],
+        box_size=[float(s) for s in grid_size],
+    )
+
+    results = []
+    for compound_index in compound_indices:
+        t0 = time.monotonic()
+        compound_pdbqt = compound_pdbqt_map.get(compound_index)
+        c_hash = compound_hashes.get(compound_index)
+
+        if compound_pdbqt is None:
+            results.append({
+                "protein_id": protein_id,
+                "compound_index": compound_index,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": c_hash,
+                "score": None,
+                "pose_blob": None,
+                "elapsed_sec": round(time.monotonic() - t0, 3),
+                "error": "compound_pdbqt_conversion_failed",
+            })
+            continue
+
+        try:
+            output_pdbqt = temp_dir / f"output_{compound_index}.pdbqt"
+            output_sdf = temp_dir / f"output_{compound_index}.sdf"
+
+            v.set_ligand_from_file(str(compound_pdbqt))
+            v.dock(exhaustiveness=exhaustiveness, n_poses=top_n_poses, min_rmsd=1.0)
+            v.write_poses(str(output_pdbqt), n_poses=top_n_poses, overwrite=True)
+            converter.pdbqt_to_sdf(output_pdbqt, output_sdf)
+
+            scores = v.energies()
+            score = float(scores[0, 0])
+            pose_blob = gz.compress(output_sdf.read_bytes(), compresslevel=9)
+
+            results.append({
+                "protein_id": protein_id,
+                "compound_index": compound_index,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": c_hash,
+                "score": score,
+                "pose_blob": pose_blob,
+                "elapsed_sec": round(time.monotonic() - t0, 3),
+                "error": None,
+            })
+        except Exception as e:
+            results.append({
+                "protein_id": protein_id,
+                "compound_index": compound_index,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": c_hash,
+                "score": None,
+                "pose_blob": None,
+                "elapsed_sec": round(time.monotonic() - t0, 3),
+                "error": str(e),
+            })
+
+    return results
+
+
 class ScreeningRunner:
-    """N×M ドッキング司令塔。再開可能・冪等。Wave 1: 逐次実行スタブ。"""
+    """N×M ドッキング司令塔。再開可能・冪等。Wave 2: Dask LocalCluster並列実行。"""
 
     def __init__(
         self,
@@ -43,6 +171,8 @@ class ScreeningRunner:
         top_n_poses: int = 1,
         compression: str = "gzip",
         grid_box_missing_policy: str = "skip",
+        _dock_fn: Optional[Callable] = None,
+        _cluster_kwargs: Optional[dict] = None,
     ) -> None:
         self.protein_set = protein_set
         self.compound_set = compound_set
@@ -55,9 +185,13 @@ class ScreeningRunner:
         self.top_n_poses = top_n_poses
         self.compression = compression
         self.grid_box_missing_policy = grid_box_missing_policy
+        self._dock_fn = _dock_fn
+        self._cluster_kwargs = _cluster_kwargs or {}
 
     def run(self, resume: bool = True, _repo: Any = None) -> ScreeningResult:
-        """実行メインループ。Wave 1: 逐次実行。_repo はテスト用依存注入。"""
+        """実行メインループ。Dask LocalCluster による並列実行。_repo はテスト用依存注入。"""
+        from distributed import Client, LocalCluster
+
         t0 = time.monotonic()
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -70,63 +204,57 @@ class ScreeningRunner:
             )
             _repo = HDF5DockingResultRepository(self.hdf5_path, mode="append")
         repo = _repo
-        protein_hashes = self.protein_set.content_hashes()
 
         all_pairs = list(self._enumerate_pairs())
         total = len(all_pairs)
         unprocessed = self._filter_unprocessed(repo)
         reused = total - len(unprocessed)
+
+        pairs_by_protein: Dict[str, List[int]] = {}
+        for protein_id, compound_index in unprocessed:
+            pairs_by_protein.setdefault(protein_id, []).append(compound_index)
+
         new_pairs = 0
         failed = 0
 
         with open(self.log_path, "a") as log_fp:
-            for protein_id, compound_index in unprocessed:
+            # grid_box missing のペアをログに記録し除外
+            valid_pairs_by_protein: Dict[str, List[int]] = {}
+            for protein_id, compound_indices in pairs_by_protein.items():
                 protein = self.protein_set[protein_id]
                 grid_box = self.grid_box_cache.get(protein)
-                compound_hash = self.compound_set.get_compound_hash(compound_index)
-                ts = datetime.now(timezone.utc).isoformat()
-
                 if grid_box is None:
                     if self.grid_box_missing_policy == "error":
                         raise ValueError(f"GridBox missing for protein '{protein_id}'")
-                    log_fp.write(
-                        json.dumps({
-                            "ts": ts,
+                    for compound_index in compound_indices:
+                        log_fp.write(json.dumps({
                             "protein_id": protein_id,
-                            "compound_idx": compound_index,
-                            "compound_hash": compound_hash,
-                            "error": "grid_box_missing",
-                        }) + "\n"
-                    )
-                    continue
-
-                try:
-                    score, pose_blob = self._dock_one_pair(protein, compound_index, grid_box)
-                    p_hash = protein_hashes[protein_id]
-                    self._save_to_hdf5(p_hash, protein_id, compound_index, compound_hash, score, pose_blob)
-                    new_pairs += 1
-                    log_fp.write(
-                        json.dumps({
-                            "ts": ts,
-                            "protein_id": protein_id,
-                            "compound_idx": compound_index,
-                            "compound_hash": compound_hash,
-                            "score": float(score),
-                            "status": "new",
-                        }) + "\n"
-                    )
-                except Exception as e:
-                    failed += 1
-                    log_fp.write(
-                        json.dumps({
-                            "ts": ts,
-                            "protein_id": protein_id,
-                            "compound_idx": compound_index,
-                            "compound_hash": compound_hash,
-                            "error": str(e),
+                            "compound_index": compound_index,
                             "status": "failed",
-                        }) + "\n"
-                    )
+                            "score": None,
+                            "elapsed_sec": 0.0,
+                            "error": "grid_box_missing",
+                        }) + "\n")
+                else:
+                    valid_pairs_by_protein[protein_id] = compound_indices
+
+            if valid_pairs_by_protein:
+                cluster_kwargs = {
+                    "n_workers": self.dask_n_workers,
+                    "threads_per_worker": 1,
+                    "memory_limit": "4GB",
+                    **self._cluster_kwargs,
+                }
+                cluster = LocalCluster(**cluster_kwargs)
+                client = Client(cluster)
+                try:
+                    futures = self._submit_to_dask(client, valid_pairs_by_protein)
+                    n, f = self._collect_and_save(futures, repo, log_fp)
+                    new_pairs += n
+                    failed += f
+                finally:
+                    client.close()
+                    cluster.close()
 
         elapsed = time.monotonic() - t0
         return ScreeningResult(
@@ -138,6 +266,107 @@ class ScreeningRunner:
             hdf5_path=self.hdf5_path,
             log_path=self.log_path,
         )
+
+    def _submit_to_dask(
+        self,
+        client: Any,
+        pairs_by_protein: Dict[str, List[int]],
+    ) -> Dict[Any, str]:
+        """各タンパク質の未処理ペアをDaskに submit する。
+
+        Returns dict[future → protein_id].
+        """
+        protein_hashes = self.protein_set.content_hashes()
+        dock_fn = self._dock_fn if self._dock_fn is not None else dock_one_protein
+        futures: Dict[Any, str] = {}
+
+        for protein_id, compound_indices in pairs_by_protein.items():
+            protein = self.protein_set[protein_id]
+            grid_box = self.grid_box_cache.get(protein)
+            p_hash = protein_hashes[protein_id]
+            compound_hashes = {
+                idx: self.compound_set.get_compound_hash(idx)
+                for idx in compound_indices
+            }
+
+            future = client.submit(
+                dock_fn,
+                str(protein.path),
+                protein_id,
+                p_hash,
+                str(self.compound_set.path),
+                compound_indices,
+                compound_hashes,
+                [float(c) for c in grid_box.center],
+                [float(s) for s in grid_box.size],
+                self.exhaustiveness,
+                self.top_n_poses,
+            )
+            futures[future] = protein_id
+
+        return futures
+
+    def _collect_and_save(
+        self,
+        futures: Dict[Any, str],
+        repo: Any,
+        log_fp: Any,
+    ) -> tuple[int, int]:
+        """futures を as_completed で受信し、結果をHDF5に保存してJSONLに記録する。
+
+        Returns (new_pairs, failed_pairs).
+        """
+        from distributed import as_completed
+
+        new_pairs = 0
+        failed = 0
+
+        for future in as_completed(list(futures.keys())):
+            protein_id = futures[future]
+            try:
+                results = future.result()
+                for r in results:
+                    if r.get("error"):
+                        failed += 1
+                        log_fp.write(json.dumps({
+                            "protein_id": r["protein_id"],
+                            "compound_index": r["compound_index"],
+                            "status": "failed",
+                            "score": None,
+                            "elapsed_sec": r["elapsed_sec"],
+                        }) + "\n")
+                    else:
+                        if r.get("pose_blob") is not None:
+                            self._save_to_hdf5(
+                                r["protein_content_hash"],
+                                r["protein_id"],
+                                r["compound_index"],
+                                r["compound_content_hash"],
+                                r["score"],
+                                r["pose_blob"],
+                            )
+                        new_pairs += 1
+                        log_fp.write(json.dumps({
+                            "protein_id": r["protein_id"],
+                            "compound_index": r["compound_index"],
+                            "status": "new",
+                            "score": r["score"],
+                            "elapsed_sec": r["elapsed_sec"],
+                        }) + "\n")
+                    log_fp.flush()
+            except Exception as e:
+                failed += 1
+                log_fp.write(json.dumps({
+                    "protein_id": protein_id,
+                    "compound_index": -1,
+                    "status": "failed",
+                    "score": None,
+                    "elapsed_sec": 0.0,
+                    "error": str(e),
+                }) + "\n")
+                log_fp.flush()
+
+        return new_pairs, failed
 
     def _enumerate_pairs(self) -> Iterator[tuple[str, int]]:
         """(protein_id, compound_index) の全組合せを yield"""
@@ -156,58 +385,6 @@ class ScreeningRunner:
                 result.append((protein_id, compound_index))
         return result
 
-    def _dock_one_pair(
-        self,
-        protein: "Protein",
-        compound_index: int,
-        grid_box: "GridBox",
-    ) -> tuple[float, bytes]:
-        """Wave 1: 逐次 Vina ドッキング。Wave 2 で Dask 対応に差し替える。"""
-        import tempfile
-
-        from vina import Vina
-
-        from docking_automation.converters.molecule_converter import MoleculeConverter
-        from docking_automation.infrastructure.utilities.file_utils import read_compounds_from_sdf
-
-        converter = MoleculeConverter()
-        temp_dir = Path(tempfile.mkdtemp())
-
-        pdbqt_path = temp_dir / f"{protein.id}.pdbqt"
-        converter.protein_to_pdbqt(protein, pdbqt_path)
-
-        compound_sdf = temp_dir / f"compound_{compound_index}.sdf"
-        for i, (_, lines) in enumerate(read_compounds_from_sdf(self.compound_set.path)):
-            if i == compound_index:
-                compound_sdf.write_text("".join(str(l) for l in lines))
-                break
-
-        compound_pdbqt = temp_dir / f"compound_{compound_index}.pdbqt"
-        converter.sdf_to_pdbqt(compound_sdf, compound_pdbqt)
-
-        center = grid_box.center
-        size = grid_box.size
-
-        v = Vina(cpu=1, seed=1, verbosity=0)
-        v.set_receptor(str(pdbqt_path))
-        v.set_ligand_from_file(str(compound_pdbqt))
-        v.compute_vina_maps(
-            center=[center[0], center[1], center[2]],
-            box_size=[size[0], size[1], size[2]],
-        )
-        v.dock(exhaustiveness=self.exhaustiveness, n_poses=self.top_n_poses, min_rmsd=1.0)
-
-        output_pdbqt = temp_dir / f"output_{compound_index}.pdbqt"
-        output_sdf = temp_dir / f"output_{compound_index}.sdf"
-        v.write_poses(str(output_pdbqt), n_poses=self.top_n_poses, overwrite=True)
-        converter.pdbqt_to_sdf(output_pdbqt, output_sdf)
-
-        scores = v.energies()
-        score = float(scores[0, 0])
-        pose_bytes = output_sdf.read_bytes()
-        pose_blob = gz.compress(pose_bytes, compresslevel=9)
-        return score, pose_blob
-
     def _save_to_hdf5(
         self,
         protein_hash: str,
@@ -219,21 +396,24 @@ class ScreeningRunner:
     ) -> None:
         """Phase 2 スキーマで HDF5 に保存する。"""
         import h5py
+        import numpy as np
 
         self.hdf5_path.parent.mkdir(parents=True, exist_ok=True)
         with h5py.File(self.hdf5_path, "a", libver="latest") as f:
+            f.swmr_mode = True
             group_path = f"/results/{protein_hash}/{compound_hash}"
             if group_path in f:
                 return
             g = f.require_group(group_path)
             g.attrs["protein_id"] = protein_id
             g.attrs["compound_index"] = compound_index
-            g.create_dataset("docking_score", data=float(score), dtype="f4")
-            g.create_dataset("pose_blob", data=pose_blob)
+            dt_str = h5py.string_dtype(encoding="utf-8")
+            g.create_dataset("docking_score", data=np.float32(score))
+            g.create_dataset("pose_blob", data=np.frombuffer(pose_blob, dtype=np.uint8))
             g.create_dataset(
                 "computed_at",
                 data=datetime.now(timezone.utc).isoformat(),
-                dtype=h5py.string_dtype(),
+                dtype=dt_str,
             )
-            g.create_dataset("source", data="vina", dtype=h5py.string_dtype())
-            g.create_dataset("top_n", data=self.top_n_poses, dtype="i4")
+            g.create_dataset("source", data="vina", dtype=dt_str)
+            g.create_dataset("top_n", data=np.int32(self.top_n_poses))

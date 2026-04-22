@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
+import json
+import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,15 +14,16 @@ from docking_automation.docking.screening_runner import ScreeningResult, Screeni
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _make_protein(protein_id: str, content_hash: str) -> MagicMock:
+def _make_protein(protein_id: str, content_hash: str, tmp_path: Path | None = None) -> MagicMock:
     p = MagicMock()
     p.id = protein_id
     p.content_hash = content_hash
+    p.path = (tmp_path or Path("/tmp")) / f"{protein_id}.pdb"
     return p
 
 
-def _make_protein_set(n: int) -> MagicMock:
-    proteins = [_make_protein(f"protein_{i}", f"hash_p{i}") for i in range(n)]
+def _make_protein_set(n: int, tmp_path: Path | None = None) -> MagicMock:
+    proteins = [_make_protein(f"protein_{i}", f"hash_p{i}", tmp_path) for i in range(n)]
     ps = MagicMock()
     ps.__iter__ = MagicMock(side_effect=lambda: iter(proteins))
     ps.__getitem__ = MagicMock(side_effect=lambda pid: next(p for p in proteins if p.id == pid))
@@ -29,12 +33,13 @@ def _make_protein_set(n: int) -> MagicMock:
     return ps
 
 
-def _make_compound_set(n: int) -> MagicMock:
+def _make_compound_set(n: int, tmp_path: Path | None = None) -> MagicMock:
     cs = MagicMock()
     cs.get_compound_count = MagicMock(return_value=n)
     cs.get_compound_hash = MagicMock(
         side_effect=lambda i: hashlib.sha256(f"compound_{i}".encode()).hexdigest()
     )
+    cs.path = (tmp_path or Path("/tmp")) / "compounds.sdf"
     return cs
 
 
@@ -61,22 +66,35 @@ def _make_repo(existing_pairs: set[tuple[str, str]] | None = None) -> MagicMock:
     return repo
 
 
+def _make_grid_box(center=(0.0, 0.0, 0.0), size=(20.0, 20.0, 20.0)) -> MagicMock:
+    gb = MagicMock()
+    gb.center = center
+    gb.size = size
+    return gb
+
+
 def _make_runner(
     n_proteins: int = 2,
     n_compounds: int = 3,
     tmp_path: Path | None = None,
     grid_box_cache=None,
     grid_box_missing_policy: str = "skip",
+    dask_n_workers: int = 4,
+    _dock_fn=None,
+    _cluster_kwargs: dict | None = None,
 ) -> ScreeningRunner:
     hdf5_path = (tmp_path or Path("/tmp")) / "test.h5"
     log_path = (tmp_path or Path("/tmp")) / "log.jsonl"
     return ScreeningRunner(
-        protein_set=_make_protein_set(n_proteins),
-        compound_set=_make_compound_set(n_compounds),
+        protein_set=_make_protein_set(n_proteins, tmp_path),
+        compound_set=_make_compound_set(n_compounds, tmp_path),
         grid_box_cache=grid_box_cache or _make_grid_box_cache(),
         hdf5_path=hdf5_path,
         log_path=log_path,
         grid_box_missing_policy=grid_box_missing_policy,
+        dask_n_workers=dask_n_workers,
+        _dock_fn=_dock_fn,
+        _cluster_kwargs=_cluster_kwargs,
     )
 
 
@@ -173,3 +191,109 @@ def test_grid_box_missing_skip(tmp_path):
         import json
         entry = json.loads(line)
         assert entry["error"] == "grid_box_missing"
+
+
+# ── Dask統合テスト用フェイクdock関数 (モジュールレベル必須: Daskがcloudpickleでシリアライズするため) ──
+
+def _fake_dock_one_protein(
+    protein_path,
+    protein_id,
+    protein_content_hash,
+    compound_sdf_path,
+    compound_indices,
+    compound_hashes,
+    grid_center,
+    grid_size,
+    exhaustiveness=1,
+    top_n_poses=1,
+):
+    """テスト用: ファイルアクセスなしに即座にフェイク結果を返す。"""
+    import gzip
+
+    return [
+        {
+            "protein_id": protein_id,
+            "compound_index": idx,
+            "protein_content_hash": protein_content_hash,
+            "compound_content_hash": compound_hashes.get(idx, f"chash_{idx}"),
+            "score": round(-7.0 - idx * 0.1, 3),
+            "pose_blob": gzip.compress(b"fake_sdf"),
+            "elapsed_sec": 0.001,
+            "error": None,
+        }
+        for idx in compound_indices
+    ]
+
+
+@pytest.mark.slow
+def test_run_with_dask_small(tmp_path):
+    """2タンパク質×2化合物のDask実行が完了する統合テスト。"""
+    n_proteins = 2
+    n_compounds = 2
+
+    grid_box = _make_grid_box()
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=grid_box)
+
+    runner = _make_runner(
+        n_proteins=n_proteins,
+        n_compounds=n_compounds,
+        tmp_path=tmp_path,
+        grid_box_cache=cache,
+        dask_n_workers=2,
+        _dock_fn=_fake_dock_one_protein,
+        _cluster_kwargs={"processes": False},
+    )
+    mock_repo = _make_repo(existing_pairs=set())
+
+    result = runner.run(resume=True, _repo=mock_repo)
+
+    total = n_proteins * n_compounds
+    assert result.total_pairs == total
+    assert result.new_pairs == total
+    assert result.reused_pairs == 0
+    assert result.failed_pairs == 0
+    assert result.elapsed_sec > 0
+
+
+@pytest.mark.slow
+def test_jsonl_output_format(tmp_path):
+    """JSONL ファイルが正しいフォーマットで出力される。"""
+    n_proteins = 2
+    n_compounds = 2
+
+    grid_box = _make_grid_box()
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=grid_box)
+
+    runner = _make_runner(
+        n_proteins=n_proteins,
+        n_compounds=n_compounds,
+        tmp_path=tmp_path,
+        grid_box_cache=cache,
+        dask_n_workers=2,
+        _dock_fn=_fake_dock_one_protein,
+        _cluster_kwargs={"processes": False},
+    )
+    mock_repo = _make_repo(existing_pairs=set())
+
+    runner.run(resume=True, _repo=mock_repo)
+
+    log_text = runner.log_path.read_text().strip()
+    assert log_text, "JSONL ファイルが空"
+
+    lines = log_text.splitlines()
+    assert len(lines) == n_proteins * n_compounds, (
+        f"期待行数: {n_proteins * n_compounds}, 実際: {len(lines)}"
+    )
+
+    for line in lines:
+        entry = json.loads(line)
+        assert "protein_id" in entry
+        assert "compound_index" in entry
+        assert "status" in entry
+        assert "score" in entry
+        assert "elapsed_sec" in entry
+        assert entry["status"] in ("new", "reused", "failed")
+        assert isinstance(entry["compound_index"], int)
+        assert isinstance(entry["elapsed_sec"], (int, float))
