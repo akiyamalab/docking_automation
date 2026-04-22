@@ -425,6 +425,14 @@ class MoleculeConverter:
                 if file_format == ".gz":
                     os.unlink(temp_path)
 
+    def sdf_to_pdbqt(self, sdf_path: Path, output_path: Path) -> Path:
+        """単一分子SDFファイルをPDBQTに変換する。"""
+        suppl = Chem.SDMolSupplier(str(sdf_path), removeHs=False)
+        mol = next((m for m in suppl if m is not None), None)
+        if mol is None:
+            raise ValueError(f"SDFファイルから有効な分子を読み込めません: {sdf_path}")
+        return self._convert_to_pdbqt_with_meeko(mol, output_path)
+
     def pdbqt_to_sdf(self, pdbqt_path: Path, output_path: Path) -> Path:
         """
         pdbqtファイルからsdfファイルに変換する。
