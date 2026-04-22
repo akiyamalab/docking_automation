@@ -471,3 +471,79 @@ def test_dock_one_protein_unidock_valid_score_passes(tmp_path):
     assert results[0]["score"] == VALID_SCORE
     assert results[0]["compound_index"] == 0
     assert results[0]["error"] is None
+
+
+# ── extra_padding テスト ────────────────────────────────────────────────────────
+
+def test_extra_padding_increases_box_size(tmp_path):
+    """extra_padding=5.0 でgrid_sizeが各次元 +10.0 (= 5.0*2) 拡大されること。"""
+    base_size = (20.0, 22.0, 24.0)
+    grid_box = _make_grid_box(center=(0.0, 0.0, 0.0), size=base_size)
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=grid_box)
+
+    protein_set = _make_protein_set(1, tmp_path)
+    compound_set = _make_compound_set(1, tmp_path)
+
+    runner = ScreeningRunner(
+        protein_set=protein_set,
+        compound_set=compound_set,
+        grid_box_cache=cache,
+        hdf5_path=tmp_path / "test.h5",
+        log_path=tmp_path / "log.jsonl",
+        extra_padding=5.0,
+        _dock_fn=_fake_dock_one_protein,
+    )
+
+    mock_future = MagicMock()
+    mock_client = MagicMock()
+    mock_client.submit.return_value = mock_future
+
+    runner._submit_to_dask(mock_client, {"protein_0": [0]})
+
+    assert mock_client.submit.called
+    call_args = mock_client.submit.call_args[0]
+    # positional args: dock_fn, protein_path, protein_id, p_hash, sdf_path,
+    #                  compound_indices, compound_hashes, grid_center, grid_size, ...
+    passed_size = call_args[8]
+    expected = [s + 10.0 for s in base_size]
+    assert passed_size == pytest.approx(expected), (
+        f"期待サイズ: {expected}, 実際: {passed_size}"
+    )
+
+
+def test_extra_padding_zero_unchanged(tmp_path):
+    """extra_padding=0.0 でgrid_sizeが変化しないこと（後方互換）。"""
+    base_size = (20.0, 22.0, 24.0)
+    grid_box = _make_grid_box(center=(0.0, 0.0, 0.0), size=base_size)
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=grid_box)
+
+    protein_set = _make_protein_set(1, tmp_path)
+    compound_set = _make_compound_set(1, tmp_path)
+
+    runner = ScreeningRunner(
+        protein_set=protein_set,
+        compound_set=compound_set,
+        grid_box_cache=cache,
+        hdf5_path=tmp_path / "test.h5",
+        log_path=tmp_path / "log.jsonl",
+        extra_padding=0.0,
+        _dock_fn=_fake_dock_one_protein,
+    )
+
+    mock_future = MagicMock()
+    mock_client = MagicMock()
+    mock_client.submit.return_value = mock_future
+
+    runner._submit_to_dask(mock_client, {"protein_0": [0]})
+
+    assert mock_client.submit.called
+    call_args = mock_client.submit.call_args[0]
+    # positional args: dock_fn, protein_path, protein_id, p_hash, sdf_path,
+    #                  compound_indices, compound_hashes, grid_center, grid_size, ...
+    passed_size = call_args[8]
+    expected = list(base_size)
+    assert passed_size == pytest.approx(expected), (
+        f"期待サイズ: {expected}, 実際: {passed_size}"
+    )

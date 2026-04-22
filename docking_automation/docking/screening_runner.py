@@ -321,6 +321,8 @@ class ScreeningRunner:
         grid_box_missing_policy: str = "skip",
         backend: str = "vina",
         search_mode: str = "balance",
+        schema_version: str = "v2",
+        extra_padding: float = 5.0,
         _dock_fn: Optional[Callable] = None,
         _cluster_kwargs: Optional[dict] = None,
     ) -> None:
@@ -337,6 +339,8 @@ class ScreeningRunner:
         self.grid_box_missing_policy = grid_box_missing_policy
         self.backend = backend
         self.search_mode = search_mode
+        self.schema_version = schema_version
+        self.extra_padding = extra_padding
         self._dock_fn = _dock_fn
         self._cluster_kwargs = _cluster_kwargs or {}
 
@@ -354,7 +358,11 @@ class ScreeningRunner:
             from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import (
                 HDF5DockingResultRepository,
             )
-            _repo = HDF5DockingResultRepository(self.hdf5_path, mode="append")
+            _repo = HDF5DockingResultRepository(
+                self.hdf5_path,
+                mode="append",
+                schema_version=self.schema_version,
+            )
         repo = _repo
 
         all_pairs = list(self._enumerate_pairs())
@@ -441,6 +449,7 @@ class ScreeningRunner:
                 for idx in compound_indices
             }
 
+            padded_size = [float(s) + 2.0 * self.extra_padding for s in grid_box.size]
             future = client.submit(
                 dock_fn,
                 str(protein.path),
@@ -450,7 +459,7 @@ class ScreeningRunner:
                 compound_indices,
                 compound_hashes,
                 [float(c) for c in grid_box.center],
-                [float(s) for s in grid_box.size],
+                padded_size,
                 self.exhaustiveness,
                 self.top_n_poses,
                 backend=self.backend,
@@ -474,40 +483,77 @@ class ScreeningRunner:
 
         new_pairs = 0
         failed = 0
+        use_bundle = getattr(repo, "schema_version", "v2") == "v3"
+        protein_hashes = self.protein_set.content_hashes() if use_bundle else {}
 
         for future in as_completed(list(futures.keys())):
             protein_id = futures[future]
             try:
                 results = future.result()
-                for r in results:
-                    if r.get("error"):
-                        failed += 1
-                        log_fp.write(json.dumps({
-                            "protein_id": r["protein_id"],
-                            "compound_index": r["compound_index"],
-                            "status": "failed",
-                            "score": None,
-                            "elapsed_sec": r["elapsed_sec"],
-                        }) + "\n")
-                    else:
-                        if r.get("pose_blob") is not None:
-                            self._save_to_hdf5(
-                                r["protein_content_hash"],
-                                r["protein_id"],
-                                r["compound_index"],
-                                r["compound_content_hash"],
-                                r["score"],
-                                r["pose_blob"],
-                            )
-                        new_pairs += 1
-                        log_fp.write(json.dumps({
-                            "protein_id": r["protein_id"],
-                            "compound_index": r["compound_index"],
-                            "status": "new",
-                            "score": r["score"],
-                            "elapsed_sec": r["elapsed_sec"],
-                        }) + "\n")
-                    log_fp.flush()
+
+                if use_bundle:
+                    bundle_entries = []
+                    for r in results:
+                        if r.get("error"):
+                            failed += 1
+                            log_fp.write(json.dumps({
+                                "protein_id": r["protein_id"],
+                                "compound_index": r["compound_index"],
+                                "status": "failed",
+                                "score": None,
+                                "elapsed_sec": r["elapsed_sec"],
+                            }) + "\n")
+                        else:
+                            bundle_entries.append({
+                                "compound_hash": r["compound_content_hash"],
+                                "score": r["score"],
+                                "pose_blob": r.get("pose_blob"),
+                                "source": self.backend,
+                                "top_n": self.top_n_poses,
+                            })
+                            new_pairs += 1
+                            log_fp.write(json.dumps({
+                                "protein_id": r["protein_id"],
+                                "compound_index": r["compound_index"],
+                                "status": "new",
+                                "score": r["score"],
+                                "elapsed_sec": r["elapsed_sec"],
+                            }) + "\n")
+                        log_fp.flush()
+                    if bundle_entries:
+                        p_hash = protein_hashes[protein_id]
+                        repo.write_bundle(p_hash, bundle_entries)
+                else:
+                    for r in results:
+                        if r.get("error"):
+                            failed += 1
+                            log_fp.write(json.dumps({
+                                "protein_id": r["protein_id"],
+                                "compound_index": r["compound_index"],
+                                "status": "failed",
+                                "score": None,
+                                "elapsed_sec": r["elapsed_sec"],
+                            }) + "\n")
+                        else:
+                            if r.get("pose_blob") is not None:
+                                self._save_to_hdf5(
+                                    r["protein_content_hash"],
+                                    r["protein_id"],
+                                    r["compound_index"],
+                                    r["compound_content_hash"],
+                                    r["score"],
+                                    r["pose_blob"],
+                                )
+                            new_pairs += 1
+                            log_fp.write(json.dumps({
+                                "protein_id": r["protein_id"],
+                                "compound_index": r["compound_index"],
+                                "status": "new",
+                                "score": r["score"],
+                                "elapsed_sec": r["elapsed_sec"],
+                            }) + "\n")
+                        log_fp.flush()
+
             except Exception as e:
                 failed += 1
                 log_fp.write(json.dumps({
@@ -531,6 +577,18 @@ class ScreeningRunner:
     def _filter_unprocessed(self, repo: Any) -> List[tuple[str, int]]:
         """HDF5 既存キーでフィルタし、未実行ペアのみ返す。"""
         protein_hashes = self.protein_set.content_hashes()
+        use_bundle = getattr(repo, "schema_version", "v2") == "v3"
+
+        if use_bundle:
+            existing_keys = repo.get_all_keys_bundle()
+            result = []
+            for protein_id, compound_index in self._enumerate_pairs():
+                p_hash = protein_hashes[protein_id]
+                c_hash = self.compound_set.get_compound_hash(compound_index)
+                if (p_hash, c_hash) not in existing_keys:
+                    result.append((protein_id, compound_index))
+            return result
+
         result = []
         for protein_id, compound_index in self._enumerate_pairs():
             p_hash = protein_hashes[protein_id]
