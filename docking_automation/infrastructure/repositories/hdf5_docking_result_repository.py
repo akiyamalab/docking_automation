@@ -16,6 +16,8 @@ from docking_automation.infrastructure.repositories.docking_result_repository im
 
 logger = logging.getLogger(__name__)
 
+_FAILED_SCORE_SENTINEL = -999.0
+
 
 class HDF5DockingResultRepository(DockingResultRepository):
     """HDF5ファイルを使用してドッキング結果を永続化するリポジトリ。
@@ -26,17 +28,30 @@ class HDF5DockingResultRepository(DockingResultRepository):
     Attributes:
         hdf5_file_path (Path): HDF5ファイルのパス。
         mode (str): 保存モード。"overwrite"（上書き）または"append"（追記）。
+        schema_version (str): "v2"=per-pair スキーマ（後方互換）, "v3"=protein-bundle スキーマ。
     """
 
-    def __init__(self, hdf5_file_path: Union[str, Path], mode: str = "overwrite") -> None:
+    def __init__(
+        self,
+        hdf5_file_path: Union[str, Path],
+        mode: str = "overwrite",
+        schema_version: str = "v2",
+    ) -> None:
         self.hdf5_file_path = Path(hdf5_file_path)
 
         if mode not in ["overwrite", "append"]:
             raise ValueError('モードは"overwrite"または"append"のいずれかを指定してください')
         self.mode = mode
 
+        if schema_version not in ["v2", "v3"]:
+            raise ValueError('schema_versionは"v2"または"v3"のいずれかを指定してください')
+        self.schema_version = schema_version
+
         self._ensure_directory_exists()
-        logger.info(f"HDF5リポジトリを初期化しました。ファイル: {self.hdf5_file_path}, モード: {self.mode}")
+        logger.info(
+            f"HDF5リポジトリを初期化しました。ファイル: {self.hdf5_file_path}, "
+            f"モード: {self.mode}, スキーマ: {self.schema_version}"
+        )
 
     def _ensure_directory_exists(self) -> None:
         self.hdf5_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -358,3 +373,205 @@ class HDF5DockingResultRepository(DockingResultRepository):
 
     def get_connection_details(self) -> Dict[str, Any]:
         return {"file_path": str(self.hdf5_file_path)}
+
+    # ── v3 protein-bundle スキーマ ────────────────────────────────────────────
+
+    def write_bundle(self, protein_hash: str, entries: List[Dict[str, Any]]) -> int:
+        """protein-bundle スキーマ (v3) で 1 タンパク質分の結果を書き込む。
+
+        entries: list of dicts with keys:
+          - compound_hash: str
+          - score: Optional[float]  (None → _FAILED_SCORE_SENTINEL = -999.0)
+          - pose_blob: Optional[bytes]  (None → b"")
+          - source: str  (default "vina")
+          - top_n: int   (default 1)
+
+        Returns: number of newly written entries (skips duplicates in append mode).
+        """
+        if not entries:
+            return 0
+
+        group_path = f"/results/{protein_hash}"
+        dt_str = h5py.string_dtype(encoding="utf-8")
+        vlen_bytes = h5py.vlen_dtype(np.uint8)
+
+        with h5py.File(self.hdf5_file_path, "a", libver="latest") as f:
+            if group_path in f:
+                grp = f[group_path]
+                if "compound_hashes" in grp:
+                    existing_hashes: Set[str] = set(
+                        h.decode("utf-8") if isinstance(h, bytes) else str(h)
+                        for h in grp["compound_hashes"][:]
+                    )
+                else:
+                    existing_hashes = set()
+            else:
+                grp = f.require_group(group_path)
+                existing_hashes = set()
+
+            new_entries = [e for e in entries if e["compound_hash"] not in existing_hashes]
+            if not new_entries:
+                return 0
+
+            compound_hashes = [e["compound_hash"] for e in new_entries]
+            scores = np.array(
+                [
+                    e["score"] if e.get("score") is not None else _FAILED_SCORE_SENTINEL
+                    for e in new_entries
+                ],
+                dtype=np.float32,
+            )
+            pose_blobs_raw = [e.get("pose_blob") or b"" for e in new_entries]
+            computed_ats = [datetime.utcnow().isoformat() + "Z" for _ in new_entries]
+            sources = [e.get("source", "vina") for e in new_entries]
+            top_ns = np.array([e.get("top_n", 1) for e in new_entries], dtype=np.int32)
+            n_new = len(new_entries)
+
+            if "compound_hashes" in grp:
+                n_exist = grp["compound_hashes"].shape[0]
+                n_total = n_exist + n_new
+
+                grp["compound_hashes"].resize(n_total, axis=0)
+                grp["compound_hashes"][n_exist:] = [c.encode("utf-8") for c in compound_hashes]
+
+                grp["docking_scores"].resize(n_total, axis=0)
+                grp["docking_scores"][n_exist:] = scores
+
+                grp["pose_blobs"].resize(n_total, axis=0)
+                for i, pb in enumerate(pose_blobs_raw):
+                    grp["pose_blobs"][n_exist + i] = np.frombuffer(pb, dtype=np.uint8)
+
+                grp["computed_at"].resize(n_total, axis=0)
+                grp["computed_at"][n_exist:] = [c.encode("utf-8") for c in computed_ats]
+
+                grp["source"].resize(n_total, axis=0)
+                grp["source"][n_exist:] = [s.encode("utf-8") for s in sources]
+
+                grp["top_n"].resize(n_total, axis=0)
+                grp["top_n"][n_exist:] = top_ns
+            else:
+                chunk = min(n_new, 1024)
+                grp.create_dataset(
+                    "compound_hashes",
+                    data=np.array([c.encode("utf-8") for c in compound_hashes], dtype=dt_str),
+                    maxshape=(None,),
+                    chunks=(chunk,),
+                )
+                grp.create_dataset(
+                    "docking_scores",
+                    data=scores,
+                    maxshape=(None,),
+                    chunks=(chunk,),
+                )
+                ds_poses = grp.create_dataset(
+                    "pose_blobs",
+                    shape=(n_new,),
+                    dtype=vlen_bytes,
+                    maxshape=(None,),
+                    chunks=(chunk,),
+                )
+                for i, pb in enumerate(pose_blobs_raw):
+                    ds_poses[i] = np.frombuffer(pb, dtype=np.uint8)
+
+                grp.create_dataset(
+                    "computed_at",
+                    data=np.array([c.encode("utf-8") for c in computed_ats], dtype=dt_str),
+                    maxshape=(None,),
+                    chunks=(chunk,),
+                )
+                grp.create_dataset(
+                    "source",
+                    data=np.array([s.encode("utf-8") for s in sources], dtype=dt_str),
+                    maxshape=(None,),
+                    chunks=(chunk,),
+                )
+                grp.create_dataset(
+                    "top_n",
+                    data=top_ns,
+                    maxshape=(None,),
+                    chunks=(chunk,),
+                )
+
+            logger.info(f"write_bundle: {n_new} 件書き込み → protein_hash={protein_hash}")
+            return n_new
+
+    def read_bundle(self, protein_hash: str) -> Optional[List[Dict[str, Any]]]:
+        """protein-bundle スキーマ (v3) から 1 タンパク質分の結果を読み込む。
+
+        Returns list of dicts with keys: compound_hash, score, pose_blob.
+        score == _FAILED_SCORE_SENTINEL (-999.0) は None に変換して返す。
+        """
+        if not self.hdf5_file_path.exists():
+            return None
+
+        group_path = f"/results/{protein_hash}"
+        try:
+            with h5py.File(self.hdf5_file_path, "r") as f:
+                if group_path not in f or "compound_hashes" not in f[group_path]:
+                    return None
+
+                grp = f[group_path]
+                n = grp["compound_hashes"].shape[0]
+                raw_hashes = grp["compound_hashes"][:]
+                compound_hashes_decoded = [
+                    h.decode("utf-8") if isinstance(h, bytes) else str(h)
+                    for h in raw_hashes
+                ]
+                docking_scores = grp["docking_scores"][:].tolist()
+                pose_blobs_raw = [bytes(grp["pose_blobs"][i]) for i in range(n)]
+
+                results = []
+                for i, ch in enumerate(compound_hashes_decoded):
+                    sc = docking_scores[i]
+                    results.append({
+                        "compound_hash": ch,
+                        "score": None if sc == _FAILED_SCORE_SENTINEL else sc,
+                        "pose_blob": pose_blobs_raw[i],
+                    })
+                return results
+
+        except Exception as e:
+            logger.error(f"read_bundle error (protein_hash={protein_hash}): {e}", exc_info=True)
+            raise
+
+    def _exists_bundle(self, protein_hash: str, compound_hash: str) -> bool:
+        """protein-bundle スキーマ (v3) で指定ペアが存在するか確認。"""
+        if not self.hdf5_file_path.exists():
+            return False
+
+        group_path = f"/results/{protein_hash}"
+        try:
+            with h5py.File(self.hdf5_file_path, "r") as f:
+                if group_path not in f or "compound_hashes" not in f[group_path]:
+                    return False
+                hashes = {
+                    h.decode("utf-8") if isinstance(h, bytes) else str(h)
+                    for h in f[group_path]["compound_hashes"][:]
+                }
+                return compound_hash in hashes
+        except Exception as e:
+            logger.error(f"_exists_bundle error: {e}", exc_info=True)
+            return False
+
+    def get_all_keys_bundle(self) -> Set[Tuple[str, str]]:
+        """protein-bundle スキーマ (v3) から全 (protein_hash, compound_hash) ペアを返す。"""
+        keys: Set[Tuple[str, str]] = set()
+        if not self.hdf5_file_path.exists():
+            return keys
+
+        try:
+            with h5py.File(self.hdf5_file_path, "r") as f:
+                if "results" not in f:
+                    return keys
+                for protein_hash in f["results"]:
+                    grp = f["results"][protein_hash]
+                    if "compound_hashes" not in grp:
+                        continue
+                    for raw_h in grp["compound_hashes"][:]:
+                        ch = raw_h.decode("utf-8") if isinstance(raw_h, bytes) else str(raw_h)
+                        keys.add((protein_hash, ch))
+        except Exception as e:
+            logger.error(f"get_all_keys_bundle error: {e}", exc_info=True)
+            raise
+
+        return keys

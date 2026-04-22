@@ -552,3 +552,114 @@ class TestHDF5Phase2Schema:
             sample_result1.protein_content_hash,
             sample_result1.compound_content_hash,
         )
+
+
+# --- v3 protein-bundle スキーマテスト ---
+
+class TestHDF5BundleSchema:
+    """v3 protein-bundle スキーマ (write_bundle / read_bundle) の検証テスト。"""
+
+    @pytest.fixture
+    def bundle_repo(self, tmp_path: Path) -> HDF5DockingResultRepository:
+        hdf5_file = tmp_path / "bundle_test.hdf5"
+        return HDF5DockingResultRepository(hdf5_file_path=hdf5_file, mode="append", schema_version="v3")
+
+    def _make_entries(self, protein_hash: str, n: int, pose_data: bytes = b"fake_sdf"):
+        import gzip
+        return [
+            {
+                "compound_hash": f"cmpd_{i:04d}",
+                "score": round(-7.0 - i * 0.1, 3),
+                "pose_blob": gzip.compress(pose_data + str(i).encode()),
+                "source": "vina",
+                "top_n": 1,
+            }
+            for i in range(n)
+        ]
+
+    def test_write_read_bundle_roundtrip(self, bundle_repo: HDF5DockingResultRepository):
+        """write_bundle → read_bundle でスコア・ハッシュ・pose_blobが一致すること。"""
+        entries = self._make_entries("prot_hash_A", 5)
+        n_written = bundle_repo.write_bundle("prot_hash_A", entries)
+        assert n_written == 5
+
+        loaded = bundle_repo.read_bundle("prot_hash_A")
+        assert loaded is not None
+        assert len(loaded) == 5
+
+        loaded_by_hash = {e["compound_hash"]: e for e in loaded}
+        for orig in entries:
+            ch = orig["compound_hash"]
+            assert ch in loaded_by_hash
+            assert abs(loaded_by_hash[ch]["score"] - orig["score"]) < 1e-5
+            assert loaded_by_hash[ch]["pose_blob"] == orig["pose_blob"]
+
+    def test_write_bundle_failed_score_sentinel(self, bundle_repo: HDF5DockingResultRepository):
+        """score=None は -999.0 sentinel で保存し、read_bundle で None に戻ること。"""
+        entries = [
+            {"compound_hash": "fail_cmpd", "score": None, "pose_blob": b"", "source": "vina", "top_n": 1}
+        ]
+        bundle_repo.write_bundle("prot_fail", entries)
+        loaded = bundle_repo.read_bundle("prot_fail")
+        assert loaded is not None
+        assert loaded[0]["score"] is None
+
+    def test_write_bundle_append_new_compounds(self, bundle_repo: HDF5DockingResultRepository):
+        """同一タンパク質に追記すると合計件数が増えること。"""
+        batch1 = self._make_entries("prot_B", 3)
+        batch2 = [
+            {"compound_hash": f"new_{i}", "score": -6.0 - i * 0.1, "pose_blob": b"x", "source": "vina", "top_n": 1}
+            for i in range(2)
+        ]
+        bundle_repo.write_bundle("prot_B", batch1)
+        n2 = bundle_repo.write_bundle("prot_B", batch2)
+        assert n2 == 2
+
+        loaded = bundle_repo.read_bundle("prot_B")
+        assert loaded is not None
+        assert len(loaded) == 5
+
+    def test_write_bundle_skip_duplicates(self, bundle_repo: HDF5DockingResultRepository):
+        """重複compound_hashは再書き込みされないこと。"""
+        entries = self._make_entries("prot_C", 3)
+        bundle_repo.write_bundle("prot_C", entries)
+        n2 = bundle_repo.write_bundle("prot_C", entries)
+        assert n2 == 0
+
+        loaded = bundle_repo.read_bundle("prot_C")
+        assert loaded is not None
+        assert len(loaded) == 3
+
+    def test_get_all_keys_bundle(self, bundle_repo: HDF5DockingResultRepository):
+        """get_all_keys_bundle が全 (protein_hash, compound_hash) ペアを返すこと。"""
+        e1 = self._make_entries("prot_X", 2)
+        e2 = self._make_entries("prot_Y", 3)
+        bundle_repo.write_bundle("prot_X", e1)
+        bundle_repo.write_bundle("prot_Y", e2)
+
+        keys = bundle_repo.get_all_keys_bundle()
+        assert len(keys) == 5
+        assert ("prot_X", "cmpd_0000") in keys
+        assert ("prot_X", "cmpd_0001") in keys
+        assert ("prot_Y", "cmpd_0000") in keys
+
+    def test_exists_bundle(self, bundle_repo: HDF5DockingResultRepository):
+        """_exists_bundle が正しく True/False を返すこと。"""
+        entries = self._make_entries("prot_D", 2)
+        assert not bundle_repo._exists_bundle("prot_D", "cmpd_0000")
+        bundle_repo.write_bundle("prot_D", entries)
+        assert bundle_repo._exists_bundle("prot_D", "cmpd_0000")
+        assert not bundle_repo._exists_bundle("prot_D", "nonexistent_hash")
+
+    def test_read_bundle_nonexistent_protein(self, bundle_repo: HDF5DockingResultRepository):
+        """存在しないprotein_hashはread_bundleでNoneを返すこと。"""
+        result = bundle_repo.read_bundle("nonexistent_protein")
+        assert result is None
+
+    def test_schema_version_invalid(self, tmp_path: Path):
+        """無効なschema_versionでValueErrorが発生すること。"""
+        with pytest.raises(ValueError):
+            HDF5DockingResultRepository(
+                hdf5_file_path=tmp_path / "test.hdf5",
+                schema_version="v99",
+            )
