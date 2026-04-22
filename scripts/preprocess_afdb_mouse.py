@@ -10,6 +10,7 @@ import random
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 RAW_URL = "https://ftp.ebi.ac.uk/pub/databases/alphafold/latest/UP000000589_10090_MOUSE_v6.tar"
@@ -63,33 +64,31 @@ def validate_tar() -> int:
 
 
 def extract(skip_existing: bool = True) -> None:
-    """tar 展開。pdb.gz のみ extracted/ へ。--skip-old-files 相当。"""
+    """tar 展開。pdb.gz のみ extracted/ へ。Python tarfile使用（NFS互換）。"""
     EXTRACT_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[extract] pdb.gz を {EXTRACT_DIR} へ展開中...")
 
-    result = subprocess.run(
-        ["tar", "-tf", str(TAR_PATH)],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"tar リスト取得失敗: {result.stderr}")
+    with tarfile.open(TAR_PATH) as tf:
+        members = [m for m in tf.getmembers() if m.name.endswith(".pdb.gz")]
+        print(f"[extract] pdb.gz エントリ数: {len(members)}")
 
-    pdb_gz_entries = [
-        line.strip() for line in result.stdout.splitlines()
-        if line.strip().endswith(".pdb.gz")
-    ]
-    print(f"[extract] pdb.gz エントリ数: {len(pdb_gz_entries)}")
-
-    extract_cmd = ["tar", "-xf", str(TAR_PATH), "--wildcards", "*.pdb.gz", "-C", str(EXTRACT_DIR)]
-    if skip_existing:
-        extract_cmd.append("--skip-old-files")
-
-    result = subprocess.run(extract_cmd)
-    if result.returncode != 0:
-        raise RuntimeError(f"tar 展開失敗 (returncode={result.returncode})")
+        extracted_count = 0
+        skipped_count = 0
+        for member in members:
+            out_path = EXTRACT_DIR / Path(member.name).name
+            if skip_existing and out_path.exists():
+                skipped_count += 1
+                continue
+            f = tf.extractfile(member)
+            if f is None:
+                continue
+            out_path.write_bytes(f.read())
+            extracted_count += 1
+            if extracted_count % 1000 == 0:
+                print(f"[extract] 進捗: {extracted_count}/{len(members)} 件完了")
 
     extracted = list(EXTRACT_DIR.rglob("*.pdb.gz"))
-    print(f"[extract] 展開完了。ファイル数: {len(extracted)}")
+    print(f"[extract] 展開完了。ファイル数: {len(extracted)} (skipped={skipped_count})")
 
 
 def decompress_pdb(limit: int | None = None) -> None:
