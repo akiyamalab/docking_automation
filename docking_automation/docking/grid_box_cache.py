@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Iterator, List, Optional
 
+import numpy as np
+
 from docking_automation.docking.grid_box import GridBox
 from docking_automation.molecule.protein import Protein
 
@@ -66,6 +68,35 @@ class GridBoxCache:
         if entry.protein_content_hash != protein.content_hash:
             return None
         return entry.grid_box
+
+    def get_with_policy(
+        self,
+        protein_id: str,
+        missing_policy: str = "skip",
+        fallback_center: Optional[list] = None,
+        fallback_size: Optional[list] = None,
+    ) -> Optional[GridBox]:
+        """
+        GridBox を取得。キャッシュミス時は missing_policy に従って処理。
+        - "skip": None を返す
+        - "error": KeyError を raise
+        - "fallback_centroid": fallback_center/size で GridBox を生成して返す
+        """
+        entry = self._entries.get(protein_id)
+        if entry is not None:
+            return entry.grid_box
+        if missing_policy == "skip":
+            return None
+        elif missing_policy == "error":
+            raise KeyError(f"No GridBox for protein_id={protein_id}")
+        elif missing_policy == "fallback_centroid":
+            if fallback_center is None or fallback_size is None:
+                raise ValueError(
+                    "fallback_center and fallback_size must be provided for fallback_centroid policy"
+                )
+            return GridBox(center=np.array(fallback_center), size=np.array(fallback_size))
+        else:
+            raise ValueError(f"Unknown missing_policy: {missing_policy}")
 
     def has(self, protein: Protein) -> bool:
         entry = self._entries.get(protein.id)

@@ -154,3 +154,49 @@ class TestGridBoxCacheEntries:
 
         ids = {e.protein_id for e in cache.entries()}
         assert ids == {"prot_A", "prot_B"}
+
+
+class TestGridBoxCacheMissingPolicy:
+    def test_get_with_policy_skip_when_missing(self, tmp_path):
+        cache = GridBoxCache(path=tmp_path / "cache.json")
+        result = cache.get_with_policy("unknown_protein", missing_policy="skip")
+        assert result is None
+
+    def test_get_with_policy_error_when_missing(self, tmp_path):
+        cache = GridBoxCache(path=tmp_path / "cache.json")
+        with pytest.raises(KeyError, match="unknown_protein"):
+            cache.get_with_policy("unknown_protein", missing_policy="error")
+
+    def test_get_with_policy_fallback_centroid(self, tmp_path):
+        cache = GridBoxCache(path=tmp_path / "cache.json")
+        result = cache.get_with_policy(
+            "unknown_protein",
+            missing_policy="fallback_centroid",
+            fallback_center=[0, 0, 0],
+            fallback_size=[20, 20, 20],
+        )
+        assert result is not None
+        assert list(result.center) == pytest.approx([0, 0, 0])
+        assert list(result.size) == pytest.approx([20, 20, 20])
+
+    def test_get_with_policy_returns_cached_regardless_policy(
+        self, tmp_path, make_protein, sample_grid_box
+    ):
+        cache = GridBoxCache(path=tmp_path / "cache.json")
+        protein = make_protein("prot_A")
+        cache.put(protein, sample_grid_box)
+
+        for policy in ("skip", "error", "fallback_centroid"):
+            result = cache.get_with_policy("prot_A", missing_policy=policy)
+            assert result is not None
+            assert list(result.center) == pytest.approx(list(sample_grid_box.center))
+
+    def test_get_with_policy_fallback_missing_args_raises(self, tmp_path):
+        cache = GridBoxCache(path=tmp_path / "cache.json")
+        with pytest.raises(ValueError):
+            cache.get_with_policy(
+                "unknown_protein",
+                missing_policy="fallback_centroid",
+                fallback_center=None,
+                fallback_size=None,
+            )
