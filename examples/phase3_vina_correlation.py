@@ -48,10 +48,11 @@ def build_protein_set() -> ProteinSet:
 
 
 def build_grid_box_cache(protein_set: ProteinSet) -> GridBoxCache:
-    grid_box_cache = GridBoxCache(GRID_BOX_CACHE_PATH)
     if GRID_BOX_CACHE_PATH.exists():
+        grid_box_cache = GridBoxCache.from_file(GRID_BOX_CACHE_PATH)
         print("  GridBoxキャッシュ読み込み済み")
         return grid_box_cache
+    grid_box_cache = GridBoxCache(GRID_BOX_CACHE_PATH)
 
     predictor = FpocketGridBoxPredictor()
     built = 0
