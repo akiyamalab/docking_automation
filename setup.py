@@ -26,7 +26,7 @@ setup(
         "pcmap",
         "h5py",  # HDF5ファイルの操作用
         "filelock",  # ファイルロック用
-        "dimorphite-dl==1.2.5",  # 1.3.2はPyPIに存在しないため、1.x系最新の1.2.5を使用
+        "dimorphite-dl==2.0.2",  # 2.0.2: deterministic API + continued maintenance (Lord approved)
     ],
     extras_require={
         "dev": [
