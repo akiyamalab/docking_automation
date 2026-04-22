@@ -43,7 +43,8 @@ RUN pip install dimorphite-dl==2.0.2
 ENV ADFR_HOME /adfr
 ENV ADFR_VER  1.0
 ENV PATH $ADFR_HOME/$ADFR_VER/bin:$PATH
-RUN wget https://ccsb.scripps.edu/adfr/download/1028/ADFRsuite_Linux-x86_64_1.0_install \
+# ccsb.scripps.edu は TLS 証明書の SAN が一致しないため --no-check-certificate で回避
+RUN wget --no-check-certificate https://ccsb.scripps.edu/adfr/download/1028/ADFRsuite_Linux-x86_64_1.0_install \
     && chmod +x ADFRsuite_Linux-x86_64_1.0_install \
     && ./ADFRsuite_Linux-x86_64_1.0_install --mode silent --prefix / \
     && rm ADFRsuite_Linux-x86_64_1.0_install
