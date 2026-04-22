@@ -11,14 +11,19 @@ RUN mamba install -y -c conda-forge openbabel=3.1.1
 RUN mamba install -y -c conda-forge fpocket || true
 
 #### fpocket source build (conda失敗時のフォールバック) ####
-RUN apt-get install -y cmake gcc g++ git \
-    && git clone https://github.com/Discngine/fpocket.git /tmp/fpocket \
-    && cd /tmp/fpocket && make -j$(nproc) \
-    && cp /tmp/fpocket/bin/fpocket /usr/local/bin/fpocket \
-    && cp /tmp/fpocket/bin/dpocket /usr/local/bin/dpocket \
-    && cp /tmp/fpocket/bin/tpocket /usr/local/bin/tpocket \
-    && cp /tmp/fpocket/bin/mdpocket /usr/local/bin/mdpocket \
-    && rm -rf /tmp/fpocket
+# CFLAGS: 新しい GCC (14+) は -Wincompatible-pointer-types を既定でエラー扱いするため、
+# fpocket 同梱の qhull が通らない。警告に戻すことでビルドを通す。
+RUN if ! command -v fpocket >/dev/null 2>&1; then \
+      apt-get install -y cmake gcc g++ git \
+      && git clone https://github.com/Discngine/fpocket.git /tmp/fpocket \
+      && cd /tmp/fpocket \
+      && make CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration" -j$(nproc) \
+      && cp /tmp/fpocket/bin/fpocket /usr/local/bin/fpocket \
+      && cp /tmp/fpocket/bin/dpocket /usr/local/bin/dpocket \
+      && cp /tmp/fpocket/bin/tpocket /usr/local/bin/tpocket \
+      && cp /tmp/fpocket/bin/mdpocket /usr/local/bin/mdpocket \
+      && rm -rf /tmp/fpocket; \
+    fi
 
 #### AutoDock Vina ####
 RUN pip install vina
