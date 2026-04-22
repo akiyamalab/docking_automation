@@ -47,6 +47,8 @@ class UniDockParameters(SpecificDockingParametersABC):
     num_modes: int = 1
     seed: int = 1
     verbosity: int = 0
+    score_threshold_max: float = 5.0   # これ以上はペナルティスコアと判断
+    score_threshold_min: float = -30.0  # これ以下も異常値と判断
 
 
 # 値オブジェクト

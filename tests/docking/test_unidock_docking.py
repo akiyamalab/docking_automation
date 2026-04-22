@@ -143,6 +143,79 @@ class TestUniDockDocking:
         assert len(results) == 1
         assert results[0].docking_score == pytest.approx(-8.5)
 
+    def test_penalty_score_filtered(self, preprocessed_protein, preprocessed_compound_set, grid_box):
+        """ペナルティスコア(999999)はフィルタされ結果に含まれない"""
+        penalty_line = "REMARK VINA RESULT:   999999      0.000      0.000\n"
+        docking = UniDockDocking()
+
+        with patch("docking_automation.docking.unidock_docking.subprocess.run", side_effect=_make_fake_run(score_line=penalty_line)):
+            with patch.object(docking, "converter") as mock_converter:
+                mock_converter.pdbqt_to_sdf.return_value = None
+                common = CommonDockingParameters(
+                    protein=preprocessed_protein,
+                    compound_set=preprocessed_compound_set,
+                    grid_box=grid_box,
+                )
+                results = docking.dock(DockingParameters(common=common, specific=UniDockParameters()))
+
+        assert len(results) == 0
+
+    def test_valid_score_passes(self, preprocessed_protein, preprocessed_compound_set, grid_box):
+        """正常スコア(-7.5)はフィルタされず結果に含まれる"""
+        valid_line = "REMARK VINA RESULT:   -7.5      0.000      0.000\n"
+        docking = UniDockDocking()
+
+        with patch("docking_automation.docking.unidock_docking.subprocess.run", side_effect=_make_fake_run(score_line=valid_line)):
+            with patch.object(docking, "converter") as mock_converter:
+                mock_converter.pdbqt_to_sdf.return_value = None
+                common = CommonDockingParameters(
+                    protein=preprocessed_protein,
+                    compound_set=preprocessed_compound_set,
+                    grid_box=grid_box,
+                )
+                results = docking.dock(DockingParameters(common=common, specific=UniDockParameters()))
+
+        assert len(results) == 2
+        for result in results:
+            assert result.docking_score == pytest.approx(-7.5)
+
+    def test_threshold_boundary(self, preprocessed_protein, grid_box, tmp_path):
+        """境界値: score=5.0 → フィルタ(None)、score=4.9 → 通過"""
+        ligand_paths = []
+        score_lines = ["REMARK VINA RESULT:   5.0      0.000      0.000\n",
+                       "REMARK VINA RESULT:   4.9      0.000      0.000\n"]
+        for i, line in enumerate(score_lines):
+            p = tmp_path / f"compound_{i}.pdbqt"
+            p.write_text(f"fake ligand {i}")
+            ligand_paths.append(p)
+
+        cs = MagicMock(spec=PreprocessedCompoundSet)
+        cs.file_paths = ligand_paths
+        cs.get_compound_hash.side_effect = lambda idx: f"hash_{idx}"
+
+        def fake_run_multi(cmd, **kwargs):
+            out_dir = Path(cmd[cmd.index("--dir") + 1])
+            ligand_idx_path = Path(cmd[cmd.index("--ligand_index") + 1])
+            paths = ligand_idx_path.read_text().splitlines()
+            for j, ligand_path in enumerate(paths):
+                stem = Path(ligand_path).stem
+                (out_dir / f"{stem}_out.pdbqt").write_text(score_lines[j])
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        docking = UniDockDocking()
+        with patch("docking_automation.docking.unidock_docking.subprocess.run", side_effect=fake_run_multi):
+            with patch.object(docking, "converter") as mock_converter:
+                mock_converter.pdbqt_to_sdf.return_value = None
+                common = CommonDockingParameters(
+                    protein=preprocessed_protein,
+                    compound_set=cs,
+                    grid_box=grid_box,
+                )
+                results = docking.dock(DockingParameters(common=common, specific=UniDockParameters()))
+
+        assert len(results) == 1
+        assert results[0].docking_score == pytest.approx(4.9)
+
     def test_run_docking_uses_seed(self, preprocessed_protein, preprocessed_compound_set, grid_box):
         """run_docking() 呼び出し時に seed=1 が CLI に渡されることを確認"""
         docking = UniDockDocking()

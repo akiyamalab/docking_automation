@@ -65,7 +65,7 @@ class UniDockDocking(DockingToolABC):
             )
             proc_result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
-            return self._parse_output(protein, compound_set, out_dir, proc_result)
+            return self._parse_output(protein, compound_set, out_dir, proc_result, specific)
 
     def _build_cli_command(
         self,
@@ -101,6 +101,7 @@ class UniDockDocking(DockingToolABC):
         compound_set: PreprocessedCompoundSet,
         out_dir: Path,
         proc_result: subprocess.CompletedProcess,
+        params: UniDockParameters,
     ) -> List[DockingResult]:
         results = []
         for idx, ligand_path in enumerate(compound_set.file_paths):
@@ -111,6 +112,9 @@ class UniDockDocking(DockingToolABC):
                 continue
 
             score = self._extract_score(out_pdbqt)
+            if score is not None:
+                if score >= params.score_threshold_max or score <= params.score_threshold_min:
+                    score = None
             if score is None:
                 continue
 
