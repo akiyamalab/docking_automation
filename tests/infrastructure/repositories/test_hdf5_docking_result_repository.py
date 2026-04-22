@@ -152,7 +152,6 @@ class TestHDF5DockingResultRepository:
         assert loaded_result.compound_set_id == sample_result1.compound_set_id
         assert loaded_result.compound_index == sample_result1.compound_index
         assert loaded_result.docking_score == sample_result1.docking_score
-        assert loaded_result.get_metadata_value("pose_data") == sample_result1.get_metadata_value("pose_data")
 
         # SDFファイルの内容を確認
         with open(sample_result1.result_path, "r") as f:
@@ -209,7 +208,6 @@ END
         loaded_result = hdf5_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == -10.0
-        assert loaded_result.get_metadata_value("pose_data") == "updated pose data"
 
         # SDFファイルの内容を確認
         with open(updated_result_path, "r") as f:
@@ -315,7 +313,6 @@ END
         loaded_result = hdf5_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == -11.0
-        assert loaded_result.get_metadata_value("pose_data") == "updated via update method"
         # 一時ファイルが使用されるため、パスは異なる
         # 代わりにSDFファイルの内容を比較
         with open(loaded_result.result_path, "r") as f:
@@ -373,9 +370,6 @@ END
         loaded_result = append_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == sample_result1.docking_score  # 元のスコアが保持されている
-        assert loaded_result.get_metadata_value("pose_data") == sample_result1.get_metadata_value(
-            "pose_data"
-        )  # 元のメタデータが保持されている
         # 一時ファイルが使用されるため、パスは異なる
         # 代わりにSDFファイルの内容を比較
         with open(loaded_result.result_path, "r") as f:
@@ -413,7 +407,6 @@ END
         loaded_result = append_repo.load(result_id)
         assert loaded_result is not None
         assert loaded_result.docking_score == -11.0  # 更新されたスコア
-        assert loaded_result.get_metadata_value("pose_data") == "updated via update method"  # 更新されたメタデータ
         # 一時ファイルが使用されるため、パスは異なる
         # 代わりにSDFファイルの内容を比較
         with open(loaded_result.result_path, "r") as f:
@@ -480,3 +473,82 @@ def _save_task_func(repo_path: Path, result: DockingResult, delay: float = 0, mo
                 assert group_path2 in f
         except Exception as e:
             pytest.fail(f"HDF5 file seems corrupted after concurrent writes: {e}")
+
+
+# --- Phase 2 スキーマ検証テスト ---
+
+class TestHDF5Phase2Schema:
+    """Phase 2 HDF5スキーマ (pose_blob, float32, computed_at, source, top_n) の検証テスト。"""
+
+    def test_save_and_load_pose_blob(self, hdf5_repo: HDF5DockingResultRepository, sample_result1: DockingResult):
+        """保存→ロードでSDF文字列が一致することを確認する。"""
+        hdf5_repo.save(sample_result1)
+
+        with open(sample_result1.result_path, "r") as f:
+            original_sdf = f.read()
+
+        loaded = hdf5_repo.load_by_hashes(
+            sample_result1.protein_content_hash,
+            sample_result1.compound_content_hash,
+        )
+        assert loaded is not None
+        with open(loaded.result_path, "r") as f:
+            loaded_sdf = f.read()
+        assert loaded_sdf == original_sdf
+
+    def test_pose_blob_is_gzip(self, hdf5_repo: HDF5DockingResultRepository, sample_result1: DockingResult):
+        """HDF5に保存されたpose_blobがgzip magic bytes (\\x1f\\x8b) で始まることを確認する。"""
+        hdf5_repo.save(sample_result1)
+
+        group_path = f"/results/{sample_result1.protein_content_hash}/{sample_result1.compound_content_hash}"
+        with h5py.File(hdf5_repo.hdf5_file_path, "r") as f:
+            pose_blob_bytes = f[group_path]["pose_blob"][()].tobytes()
+
+        assert pose_blob_bytes[:2] == b"\x1f\x8b", "pose_blobはgzip形式でなければならない"
+
+    def test_docking_score_dtype(self, hdf5_repo: HDF5DockingResultRepository, sample_result1: DockingResult):
+        """ロードしたdocking_scoreがfloat型であることを確認する。"""
+        hdf5_repo.save(sample_result1)
+
+        loaded = hdf5_repo.load_by_hashes(
+            sample_result1.protein_content_hash,
+            sample_result1.compound_content_hash,
+        )
+        assert loaded is not None
+        assert isinstance(loaded.docking_score, float)
+
+    def test_get_all_keys_empty(self, hdf5_repo: HDF5DockingResultRepository):
+        """空HDF5でget_all_keys()が空セットを返すことを確認する。"""
+        keys = hdf5_repo.get_all_keys()
+        assert isinstance(keys, set)
+        assert len(keys) == 0
+
+    def test_get_all_keys_after_saves(
+        self,
+        hdf5_repo: HDF5DockingResultRepository,
+        sample_result1: DockingResult,
+        sample_result2: DockingResult,
+        sample_result3: DockingResult,
+    ):
+        """3件保存後にget_all_keys()が3件のキーを返すことを確認する。"""
+        hdf5_repo.save(sample_result1)
+        hdf5_repo.save(sample_result2)
+        hdf5_repo.save(sample_result3)
+
+        keys = hdf5_repo.get_all_keys()
+        assert len(keys) == 3
+        assert (sample_result1.protein_content_hash, sample_result1.compound_content_hash) in keys
+        assert (sample_result2.protein_content_hash, sample_result2.compound_content_hash) in keys
+        assert (sample_result3.protein_content_hash, sample_result3.compound_content_hash) in keys
+
+    def test_exists_after_save(self, hdf5_repo: HDF5DockingResultRepository, sample_result1: DockingResult):
+        """保存後にexists()がTrueを返すことを確認する。"""
+        assert not hdf5_repo._exists(
+            sample_result1.protein_content_hash,
+            sample_result1.compound_content_hash,
+        )
+        hdf5_repo.save(sample_result1)
+        assert hdf5_repo._exists(
+            sample_result1.protein_content_hash,
+            sample_result1.compound_content_hash,
+        )
