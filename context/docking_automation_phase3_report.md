@@ -50,15 +50,16 @@ SKIP = FAIL ルール適用範囲外（Phase 3 設計範囲外の未実装機能
 
 ## 3. GPU E2E 結果 (Wave 3-F より)
 
-> **注意**: 本セクションは足軽3号 (subtask_011_f) の完了後に数値を補完予定。現時点は TBD。
+足軽3号 (subtask_011_f) 実測値（2026-04-22）。
 
-- 実行環境: TBD（RTX 2080 SUPER / CUDA 12.4 想定）
-- Uni-Dock バージョン: TBD
+- 実行環境: RTX 2080 SUPER / CUDA 12.4
 - テスト規模: 10 protein × 100 compound = 1000 ペア
-- Run 1: failed=TBD, elapsed=TBD
-- Run 2 (resume / 冪等性確認): reused=TBD, elapsed=TBD
-- スコア統計: mean=TBD, min=TBD, max=TBD kcal/mol
-- Vina Phase 2 比 speedup: TBD（GPU 並列化による高速化見込み）
+- Run 1: failed=0, elapsed=249.3s（1000ペア完走）
+- Run 2 (resume / 冪等性確認): reused=1000, elapsed=0.49s
+- スコア統計: mean=2351.50, min=-198.04, max=1,623,719.00 kcal/mol
+  > ⚠️ **異常スコア検出**: max値 (1,623,719 kcal/mol) は UniDock penalty score 混入による異常値。
+  > subtask_011_h にてフィルタリング修正予定。
+- Vina Phase 2 比 speedup: 未計測（Vina Phase 2 baseline なし）
 
 ## 4. 既知の課題・残タスク
 
