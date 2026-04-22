@@ -20,7 +20,8 @@ class TestDockingResult:
             compound_index=0,
             docking_score=-8.5,
             protein_content_hash="protein_hash_1",
-            compoundset_content_hash="compound_hash_1",
+            compound_content_hash="compound_hash_1",
+            compoundset_content_hash="compoundset_hash_1",
             metadata={"tool": "AutoDock Vina"},
         )
 
@@ -32,7 +33,7 @@ class TestDockingResult:
         assert sample_result.compound_index == 0
         assert sample_result.docking_score == -8.5
         assert sample_result.protein_content_hash == "protein_hash_1"
-        assert sample_result.compoundset_content_hash == "compound_hash_1"
+        assert sample_result.compoundset_content_hash == "compoundset_hash_1"
         assert sample_result.metadata == {"tool": "AutoDock Vina"}
         assert sample_result.id.startswith("protein1_compounds1_0_")
         assert sample_result.version == 1
@@ -151,6 +152,7 @@ class TestDockingResult:
             compound_index=1,
             docking_score=-7.5,
             protein_content_hash="protein_hash_2",
+            compound_content_hash="test_compound_hash",
             compoundset_content_hash="compound_hash_2",
             id=sample_result.id,
         )
@@ -164,6 +166,7 @@ class TestDockingResult:
             compound_index=1,
             docking_score=-7.5,
             protein_content_hash="protein_hash_2",
+            compound_content_hash="test_compound_hash",
             compoundset_content_hash="compound_hash_2",
         )
         assert sample_result != different_result
@@ -180,6 +183,7 @@ class TestDockingResult:
             compound_index=1,
             docking_score=-7.5,
             protein_content_hash="protein_hash_2",
+            compound_content_hash="test_compound_hash",
             compoundset_content_hash="compound_hash_2",
             id=sample_result.id,
         )
@@ -193,6 +197,7 @@ class TestDockingResult:
             compound_index=1,
             docking_score=-7.5,
             protein_content_hash="protein_hash_2",
+            compound_content_hash="test_compound_hash",
             compoundset_content_hash="compound_hash_2",
         )
         assert hash(sample_result) != hash(different_result)
@@ -271,6 +276,7 @@ class TestDockingResult:
             compound_index=5,
             docking_score=-9.0,
             protein_content_hash="protein_hash_factory",
+            compound_content_hash="test_compound_hash",
             compoundset_content_hash="compound_hash_factory",
             metadata={"factory": True},
             id="custom_id",
