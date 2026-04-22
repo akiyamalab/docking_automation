@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -42,8 +43,9 @@ class TestGridBox:
 
     def test_from_compound(self):
         """化合物からGridBoxを生成するテスト"""
-        # テスト用のCompoundSetを作成
-        compound_set = CompoundSet(path="/workspaces/20260422_mouse_docking/docking_automation/examples/input/ALDR/crystal_ligand.mol2")
+        # テスト用のCompoundSetを作成（リポジトリルートからの相対パス）
+        repo_root = Path(__file__).resolve().parents[2]
+        compound_set = CompoundSet(path=repo_root / "examples/input/ALDR/crystal_ligand.mol2")
 
         # GridBoxを生成
         grid_box = GridBox.from_compound(compound_set)

@@ -248,7 +248,9 @@ for pdb in filepath_list:
 
         secondary_struc_list = []
 
-        chain_df["secondary_struc"] = np.nan
+        # pandas 2.x はdtype strict化により float64 列へ文字列代入が LossySetitemError となる。
+        # secondary_struc は文字列（"H" / "-" 等）で埋めるため object dtype で初期化する。
+        chain_df["secondary_struc"] = pd.Series(np.nan, index=chain_df.index, dtype=object)
 
         for key in list(dssp.keys()):
 
