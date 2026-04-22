@@ -9,7 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docking_automation.docking.screening_runner import ScreeningResult, ScreeningRunner
+from docking_automation.docking.autodockvina_docking import AutoDockVina
+from docking_automation.docking.screening_runner import (
+    ScreeningResult,
+    ScreeningRunner,
+    _make_docking_tool,
+)
+from docking_automation.docking.unidock_docking import UniDockDocking
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -298,3 +304,75 @@ def test_jsonl_output_format(tmp_path):
         assert entry["status"] in ("new", "reused", "failed")
         assert isinstance(entry["compound_index"], int)
         assert isinstance(entry["elapsed_sec"], (int, float))
+
+
+# ── backend 切替テスト ───────────────────────────────────────────────────────
+
+def test_backend_default_is_vina(tmp_path):
+    """ScreeningRunner() のデフォルト backend が "vina" であること。"""
+    runner = _make_runner(tmp_path=tmp_path)
+    assert runner.backend == "vina"
+
+
+def test_backend_unidock_accepted(tmp_path):
+    """ScreeningRunner(backend="unidock") が例外なく生成できること。"""
+    runner = _make_runner(tmp_path=tmp_path)
+    runner2 = ScreeningRunner(
+        protein_set=runner.protein_set,
+        compound_set=runner.compound_set,
+        grid_box_cache=runner.grid_box_cache,
+        hdf5_path=tmp_path / "test2.h5",
+        log_path=tmp_path / "log2.jsonl",
+        backend="unidock",
+    )
+    assert runner2.backend == "unidock"
+
+
+def test_make_docking_tool_vina():
+    """_make_docking_tool("vina") が AutoDockVina インスタンスを返すこと。"""
+    tool = _make_docking_tool("vina")
+    assert isinstance(tool, AutoDockVina)
+
+
+def test_make_docking_tool_unidock():
+    """_make_docking_tool("unidock") が UniDockDocking インスタンスを返すこと。"""
+    tool = _make_docking_tool("unidock")
+    assert isinstance(tool, UniDockDocking)
+
+
+def test_make_docking_tool_unknown():
+    """_make_docking_tool("unknown_backend") が ValueError を raise すること。"""
+    with pytest.raises(ValueError, match="Unknown backend"):
+        _make_docking_tool("unknown_backend")
+
+
+def test_backend_propagated_to_dock_one_protein(tmp_path):
+    """run() 実行時に client.submit が backend="unidock" 引数付きで呼ばれること。"""
+    grid_box = _make_grid_box()
+    cache = MagicMock()
+    cache.get = MagicMock(return_value=grid_box)
+
+    protein_set = _make_protein_set(1, tmp_path)
+    compound_set = _make_compound_set(1, tmp_path)
+
+    runner = ScreeningRunner(
+        protein_set=protein_set,
+        compound_set=compound_set,
+        grid_box_cache=cache,
+        hdf5_path=tmp_path / "test.h5",
+        log_path=tmp_path / "log.jsonl",
+        backend="unidock",
+        _dock_fn=_fake_dock_one_protein,
+    )
+
+    mock_future = MagicMock()
+    mock_client = MagicMock()
+    mock_client.submit.return_value = mock_future
+
+    runner._submit_to_dask(mock_client, {"protein_0": [0]})
+
+    assert mock_client.submit.called, "client.submit が呼ばれていない"
+    call_kwargs = mock_client.submit.call_args[1]
+    assert call_kwargs.get("backend") == "unidock", (
+        f"backend kwarg が 'unidock' でない: {call_kwargs}"
+    )
