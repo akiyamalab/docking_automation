@@ -66,3 +66,6 @@ RUN wget -q "https://github.com/dptech-corp/Uni-Dock/releases/download/1.1.0/uni
     -O /usr/local/bin/unidock \
     && chmod +x /usr/local/bin/unidock
 
+# Remove cuda-compat so nvidia-container-runtime auto-mounts host libcuda (portable across driver versions)
+RUN apt-get remove -y cuda-compat-12-4 2>/dev/null || true
+
