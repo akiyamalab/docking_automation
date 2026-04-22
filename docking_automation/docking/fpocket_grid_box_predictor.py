@@ -132,9 +132,7 @@ class FpocketGridBoxPredictor:
         cmd = [
             "fpocket",
             "-f",
-            str(
-                protein_path.relative_to(Path.cwd())
-            ),  # 相対パスを使用（注: 絶対パスが長い場合にfpocketが適切に動作しない場合があるため）
+            str(protein_path.resolve()),
         ]
 
         try:
