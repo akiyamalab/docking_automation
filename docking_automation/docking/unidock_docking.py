@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from docking_automation.converters.molecule_converter import MoleculeConverter
 from docking_automation.docking.docking import DockingToolABC
@@ -51,21 +51,45 @@ class UniDockDocking(DockingToolABC):
         compound_set = common.compound_set
         grid_box = common.grid_box
 
+        all_indices = list(range(len(compound_set.file_paths)))
+        results, failed_indices = self._run_batch(
+            protein, compound_set, all_indices, grid_box, specific, specific.search_mode
+        )
+
+        if specific.rescue_mode and failed_indices:
+            rescue_results, _ = self._run_batch(
+                protein, compound_set, failed_indices, grid_box, specific, specific.rescue_search_mode
+            )
+            results.extend(rescue_results)
+
+        return results
+
+    def _run_batch(
+        self,
+        protein: PreprocessedProtein,
+        compound_set: PreprocessedCompoundSet,
+        ligand_indices: List[int],
+        grid_box,
+        params: UniDockParameters,
+        search_mode: str,
+    ) -> Tuple[List[DockingResult], List[int]]:
+        ligand_paths = [compound_set.file_paths[i] for i in ligand_indices]
+
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
 
             ligand_index = tmpdir / "ligands.txt"
-            ligand_index.write_text("\n".join(str(f) for f in compound_set.file_paths))
+            ligand_index.write_text("\n".join(str(f) for f in ligand_paths))
 
             out_dir = tmpdir / "output"
             out_dir.mkdir()
 
             cmd = self._build_cli_command(
-                protein.file_path, ligand_index, grid_box, out_dir, specific
+                protein.file_path, ligand_index, grid_box, out_dir, params, search_mode=search_mode
             )
             proc_result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
-            return self._parse_output(protein, compound_set, out_dir, proc_result, specific)
+            return self._parse_output(protein, compound_set, ligand_indices, out_dir, proc_result, params)
 
     def _build_cli_command(
         self,
@@ -74,9 +98,11 @@ class UniDockDocking(DockingToolABC):
         grid_box,
         out_dir: Path,
         params: UniDockParameters,
+        search_mode: Optional[str] = None,
     ) -> List[str]:
         center = grid_box.center
         size = grid_box.size
+        _search_mode = search_mode if search_mode is not None else params.search_mode
         return [
             self.binary,
             "--receptor", str(receptor),
@@ -88,7 +114,7 @@ class UniDockDocking(DockingToolABC):
             "--size_y", str(size[1]),
             "--size_z", str(size[2]),
             "--scoring", params.scoring,
-            "--search_mode", params.search_mode,
+            "--search_mode", _search_mode,
             "--num_modes", str(params.num_modes),
             "--seed", str(params.seed),
             "--dir", str(out_dir),
@@ -99,16 +125,20 @@ class UniDockDocking(DockingToolABC):
         self,
         protein: PreprocessedProtein,
         compound_set: PreprocessedCompoundSet,
+        ligand_indices: List[int],
         out_dir: Path,
         proc_result: subprocess.CompletedProcess,
         params: UniDockParameters,
-    ) -> List[DockingResult]:
+    ) -> Tuple[List[DockingResult], List[int]]:
         results = []
-        for idx, ligand_path in enumerate(compound_set.file_paths):
+        failed_indices = []
+        for orig_idx in ligand_indices:
+            ligand_path = compound_set.file_paths[orig_idx]
             stem = ligand_path.stem
             out_pdbqt = out_dir / f"{stem}_out.pdbqt"
 
             if not out_pdbqt.exists():
+                failed_indices.append(orig_idx)
                 continue
 
             score = self._extract_score(out_pdbqt)
@@ -116,6 +146,7 @@ class UniDockDocking(DockingToolABC):
                 if score >= params.score_threshold_max or score <= params.score_threshold_min:
                     score = None
             if score is None:
+                failed_indices.append(orig_idx)
                 continue
 
             sdf_path = out_pdbqt.with_suffix(".sdf")
@@ -125,21 +156,21 @@ class UniDockDocking(DockingToolABC):
             except Exception:
                 result_path = out_pdbqt
 
-            compound_hash = compound_set.get_compound_hash(idx)
+            compound_hash = compound_set.get_compound_hash(orig_idx)
             compound_set_id = stem.rsplit("_", 1)[0] if "_" in stem else stem
 
             results.append(DockingResult(
                 result_path=result_path,
                 protein_id=protein.file_path.stem,
                 compound_set_id=compound_set_id,
-                compound_index=idx,
+                compound_index=orig_idx,
                 docking_score=score,
                 protein_content_hash=protein.content_hash,
                 compound_content_hash=compound_hash,
                 metadata={"tool": "Uni-Dock", "source": "unidock"},
             ))
 
-        return results
+        return results, failed_indices
 
     def _extract_score(self, pdbqt_path: Path) -> Optional[float]:
         for line in pdbqt_path.read_text().splitlines():

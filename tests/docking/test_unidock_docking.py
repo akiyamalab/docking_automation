@@ -73,6 +73,8 @@ class TestUniDockParameters:
         assert params.search_mode == "balance"
         assert params.scoring == "vina"
         assert params.num_modes == 1
+        assert params.rescue_mode is False
+        assert params.rescue_search_mode == "detail"
 
 
 class TestUniDockDocking:
@@ -215,6 +217,74 @@ class TestUniDockDocking:
 
         assert len(results) == 1
         assert results[0].docking_score == pytest.approx(4.9)
+
+    def test_rescue_mode_retries_failed_ligands(self, preprocessed_protein, preprocessed_compound_set, grid_box):
+        """rescue_mode=True のとき、failed リガンドが rescue_search_mode で再実行される"""
+        call_count = [0]
+
+        def fake_run_with_rescue(cmd, **kwargs):
+            call_count[0] += 1
+            out_dir = Path(cmd[cmd.index("--dir") + 1])
+            ligand_idx_path = Path(cmd[cmd.index("--ligand_index") + 1])
+            paths = ligand_idx_path.read_text().splitlines()
+            if call_count[0] == 1:
+                # 1回目: compound_0 のみ成功 (compound_1 は出力ファイルなし)
+                stem = Path(paths[0]).stem
+                (out_dir / f"{stem}_out.pdbqt").write_text(VINA_RESULT_LINE)
+            else:
+                # rescue: 渡された全リガンドが成功
+                for p in paths:
+                    stem = Path(p).stem
+                    (out_dir / f"{stem}_out.pdbqt").write_text(VINA_RESULT_LINE)
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        docking = UniDockDocking()
+        with patch("docking_automation.docking.unidock_docking.subprocess.run", side_effect=fake_run_with_rescue):
+            with patch.object(docking, "converter") as mock_converter:
+                mock_converter.pdbqt_to_sdf.return_value = None
+                common = CommonDockingParameters(
+                    protein=preprocessed_protein,
+                    compound_set=preprocessed_compound_set,
+                    grid_box=grid_box,
+                )
+                results = docking.dock(DockingParameters(
+                    common=common,
+                    specific=UniDockParameters(rescue_mode=True, rescue_search_mode="detail"),
+                ))
+
+        assert len(results) == 2
+        assert call_count[0] == 2
+
+    def test_rescue_mode_false_no_retry(self, preprocessed_protein, preprocessed_compound_set, grid_box):
+        """rescue_mode=False のとき、failed リガンドは再実行されない"""
+        call_count = [0]
+
+        def fake_run_partial(cmd, **kwargs):
+            call_count[0] += 1
+            out_dir = Path(cmd[cmd.index("--dir") + 1])
+            ligand_idx_path = Path(cmd[cmd.index("--ligand_index") + 1])
+            paths = ligand_idx_path.read_text().splitlines()
+            # compound_0 のみ成功
+            stem = Path(paths[0]).stem
+            (out_dir / f"{stem}_out.pdbqt").write_text(VINA_RESULT_LINE)
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        docking = UniDockDocking()
+        with patch("docking_automation.docking.unidock_docking.subprocess.run", side_effect=fake_run_partial):
+            with patch.object(docking, "converter") as mock_converter:
+                mock_converter.pdbqt_to_sdf.return_value = None
+                common = CommonDockingParameters(
+                    protein=preprocessed_protein,
+                    compound_set=preprocessed_compound_set,
+                    grid_box=grid_box,
+                )
+                results = docking.dock(DockingParameters(
+                    common=common,
+                    specific=UniDockParameters(rescue_mode=False),
+                ))
+
+        assert len(results) == 1
+        assert call_count[0] == 1
 
     def test_run_docking_uses_seed(self, preprocessed_protein, preprocessed_compound_set, grid_box):
         """run_docking() 呼び出し時に seed=1 が CLI に渡されることを確認"""
