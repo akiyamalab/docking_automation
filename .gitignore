@@ -61,3 +61,6 @@ docs/build/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# AFDB データ（大容量バイナリ）
+data/afdb/
