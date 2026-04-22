@@ -316,6 +316,7 @@ class ScreeningRunner:
                 [float(s) for s in grid_box.size],
                 self.exhaustiveness,
                 self.top_n_poses,
+                backend=self.backend,
             )
             futures[future] = protein_id
 
