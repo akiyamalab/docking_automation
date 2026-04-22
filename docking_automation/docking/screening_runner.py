@@ -27,6 +27,18 @@ class ScreeningResult:
     log_path: Path
 
 
+def _make_docking_tool(backend: str):
+    """backendに応じてドッキングツールを生成するファクトリ。"""
+    if backend == "vina":
+        from docking_automation.docking.autodockvina_docking import AutoDockVina
+        return AutoDockVina()
+    elif backend == "unidock":
+        from docking_automation.docking.unidock_docking import UniDockDocking
+        return UniDockDocking()
+    else:
+        raise ValueError(f"Unknown backend: {backend}")
+
+
 def dock_one_protein(
     protein_path: str,
     protein_id: str,
@@ -38,6 +50,7 @@ def dock_one_protein(
     grid_size: List[float],
     exhaustiveness: int = 1,
     top_n_poses: int = 1,
+    backend: str = "vina",
 ) -> List[dict]:
     """1タンパク質の指定化合物群ドッキングをDaskワーカーで実行する。
 
@@ -171,6 +184,7 @@ class ScreeningRunner:
         top_n_poses: int = 1,
         compression: str = "gzip",
         grid_box_missing_policy: str = "skip",
+        backend: str = "vina",
         _dock_fn: Optional[Callable] = None,
         _cluster_kwargs: Optional[dict] = None,
     ) -> None:
@@ -185,6 +199,7 @@ class ScreeningRunner:
         self.top_n_poses = top_n_poses
         self.compression = compression
         self.grid_box_missing_policy = grid_box_missing_policy
+        self.backend = backend
         self._dock_fn = _dock_fn
         self._cluster_kwargs = _cluster_kwargs or {}
 

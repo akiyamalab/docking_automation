@@ -1,4 +1,5 @@
 from abc import ABC
+from dataclasses import dataclass, field
 
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
@@ -36,6 +37,16 @@ class SpecificDockingParametersABC(ABC):
     """
 
     ...
+
+
+@dataclass
+class UniDockParameters(SpecificDockingParametersABC):
+    """Uni-Dock GPU バッチドッキング固有パラメータ。"""
+    search_mode: str = "balance"  # fast / balance / detail
+    scoring: str = "vina"         # vina / vinardo
+    num_modes: int = 1
+    seed: int = 1
+    verbosity: int = 0
 
 
 # 値オブジェクト
