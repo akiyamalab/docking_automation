@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import List, Optional, Set
+from typing import TYPE_CHECKING, List, Optional, Set
 
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
-from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import HDF5DockingResultRepository
+
+if TYPE_CHECKING:
+    from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import HDF5DockingResultRepository
 
 from ..molecule.compound_set import CompoundSet
 from ..molecule.protein import Protein

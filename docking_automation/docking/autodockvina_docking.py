@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Tuple, Union
+
+if TYPE_CHECKING:
+    from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import HDF5DockingResultRepository
 
 import numpy as np
 import numpy.typing as npt
@@ -18,11 +23,8 @@ class VinaProtocol(Protocol):
     def energies(self) -> npt.NDArray[np.float64]: ...
 
 
-from vina import Vina
-
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
 from docking_automation.docking.preprocessed_protein import PreprocessedProtein
-from docking_automation.infrastructure.repositories.hdf5_docking_result_repository import HDF5DockingResultRepository
 
 from ..converters.molecule_converter import MoleculeConverter
 from ..molecule.compound_set import CompoundSet
@@ -30,6 +32,7 @@ from ..molecule.protein import Protein
 from .docking import DockingToolABC
 from .docking_parameters import DockingParameters, SpecificDockingParametersABC
 from .docking_result import DockingResult
+from vina import Vina
 
 
 # 値オブジェクト

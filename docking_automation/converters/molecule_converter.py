@@ -244,29 +244,19 @@ class MoleculeConverter:
             # 水素原子を削除した分子をPDBファイルとして保存
             mol.write("pdb", str(temp_protein_path), overwrite=True)
 
-            # prepare_receptorコマンドを使用してPDBQTに変換
-            # prepare_receptorコマンドのオプション
-            # -r: 入力ファイル
-            # -o: 出力ファイル
-            # -A: 修復タイプ（hydrogens: 水素を追加）
-            # -U: クリーンアップタイプ（nphs: 非極性水素を削除）
+            # obabelを使用してPDBQTに変換（-xr: 受容体モード）
             cmd = [
-                "prepare_receptor",
-                "-r",
+                "obabel",
                 str(temp_protein_path),
-                "-o",
+                "-O",
                 str(output_path),
-                "-A",
-                "hydrogens",
-                "-U",
-                "nphs",
+                "-xr",
             ]
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
 
             return output_path
         except subprocess.CalledProcessError as e:
-            # TODO: ログ出力は標準ライブラリを利用したい
-            error_message = f"prepare_receptorの実行中にエラーが発生しました: {e}\n"
+            error_message = f"obabelの実行中にエラーが発生しました: {e}\n"
             error_message += f"標準エラー出力: {e.stderr}\n"
             error_message += f"標準出力: {e.stdout}\n"
             error_message += f"コマンド: {' '.join(cmd)}\n"
