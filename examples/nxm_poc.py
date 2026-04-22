@@ -194,7 +194,7 @@ def load_compounds(sdf_path: Path, max_n: Optional[int] = 10):
     return compound_set
 
 
-def run_nxm(proteins: List, compound_set, repo, metrics_fp) -> List[dict]:
+def run_nxm(proteins: List, compound_set, repo, metrics_fp, exhaustiveness: int = 4) -> List[dict]:
     """N×M ドッキングを実行してメトリクスを記録する。"""
     from vina import Vina
 
@@ -281,7 +281,7 @@ def run_nxm(proteins: List, compound_set, repo, metrics_fp) -> List[dict]:
                         center=[float(center[0]), float(center[1]), float(center[2])],
                         box_size=[float(size[0]), float(size[1]), float(size[2])],
                     )
-                    v.dock(exhaustiveness=4, n_poses=3, min_rmsd=1.0)
+                    v.dock(exhaustiveness=exhaustiveness, n_poses=3, min_rmsd=1.0)
                     v.write_poses(str(output_pdbqt), n_poses=3, overwrite=True)
                     converter.pdbqt_to_sdf(output_pdbqt, output_sdf)
                     scores = v.energies()
@@ -296,7 +296,7 @@ def run_nxm(proteins: List, compound_set, repo, metrics_fp) -> List[dict]:
                         protein_content_hash=protein.content_hash,
                         compound_content_hash=compound_hash,
                         compoundset_content_hash=prep_compounds.content_hash,
-                        metadata={"tool": "AutoDock Vina", "exhaustiveness": 4, "num_modes": 3},
+                        metadata={"tool": "AutoDock Vina", "exhaustiveness": exhaustiveness, "num_modes": 3},
                     )
 
                     # HDF5 保存
@@ -369,6 +369,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="N×M ドッキングPoC")
     parser.add_argument("--dry-run", action="store_true", help="設定確認のみ（ドッキング実行なし）")
     parser.add_argument("--max-compounds", type=int, default=10, help="処理する化合物の最大数（デフォルト: 10）")
+    parser.add_argument("--exhaustiveness", type=int, default=4, help="Vina exhaustiveness（デフォルト: 4）")
     parser.add_argument("--extended", action="store_true", help="actives_extended20.sdf を使用（20件）")
     parser.add_argument(
         "--protein-list", type=Path, default=None, help="protein_list.json のパス（デフォルト: afdb_mouse/protein_list.json）"
@@ -416,7 +417,7 @@ def main():
     print(f"  タンパク質数:   {len(proteins)}")
     print(f"  化合物数:       {max_n}")
     print(f"  総ペア数:       {len(proteins) * max_n}")
-    print(f"  exhaustiveness: 4")
+    print(f"  exhaustiveness: {args.exhaustiveness}")
     print(f"  num_modes:      3")
     print(f"  HDF5 出力先:    {HDF5_DIR}")
 
@@ -443,7 +444,7 @@ def main():
     # --- N×M ドッキング実行 ---
     t_start = time.time()
     with open(METRICS_JSONL, "w") as metrics_fp:
-        all_metrics = run_nxm(proteins, compound_set, repo, metrics_fp)
+        all_metrics = run_nxm(proteins, compound_set, repo, metrics_fp, exhaustiveness=args.exhaustiveness)
     elapsed = time.time() - t_start
 
     # --- サマリ出力 ---

@@ -462,11 +462,20 @@ def parse_args():
         default=None,
         help="protein_list.json のパス（デフォルト: afdb_mouse/protein_list.json）",
     )
+    parser.add_argument(
+        "--hdf5-dir",
+        type=Path,
+        default=None,
+        help="HDF5出力ディレクトリ（デフォルト: output/nxm_poc_hdf5）",
+    )
     return parser.parse_args()
 
 
 def main():
+    global HDF5_DIR
     args = parse_args()
+    if args.hdf5_dir is not None:
+        HDF5_DIR = args.hdf5_dir
 
     print("=== N×M ドッキングPoC (Dask並列版) 開始 ===")
     print(f"ワーカー数: {args.workers}")

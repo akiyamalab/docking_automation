@@ -170,6 +170,9 @@ class MoleculeConverter:
                 # SDFファイルを読み込む
                 suppl = Chem.SDMolSupplier(str(compound.path))
                 mols = [mol for mol in suppl if mol is not None]
+            elif file_format.lower() == "mol2":
+                mol = Chem.MolFromMol2File(str(compound.path), removeHs=False)
+                mols = [mol] if mol is not None else []
             else:
                 raise ValueError(f"サポートされていないファイル形式です: {file_format}")
 

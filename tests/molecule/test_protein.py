@@ -58,10 +58,12 @@ class TestProtein:
         """テスト用のProteinインスタンスを作成する"""
         return create_test_protein("test_protein.pdb", amino_acid_type="ALA_N", id="test_protein")
 
-    @pytest.mark.skip(reason="未実装のテスト")
     def test_initialization(self, sample_protein):
         """初期化のテスト"""
-        pass
+        assert sample_protein.id == "test_protein"
+        assert sample_protein.path.exists()
+        assert sample_protein.content_hash is not None
+        assert isinstance(sample_protein.content_hash, str)
 
     def test_id_assignment(self, create_test_protein):
         """IDの割り当てのテスト"""

@@ -16,35 +16,34 @@ class TestGridBox:
         """テスト用のGridBoxインスタンスを作成する"""
         return GridBox(center_x=10.0, center_y=20.0, center_z=30.0, size_x=15.0, size_y=25.0, size_z=35.0)
 
-    @pytest.mark.skip(reason="未実装のテスト")
     def test_initialization_with_individual_values(self):
         """個別の値による初期化のテスト"""
         grid_box = GridBox(center_x=10.0, center_y=20.0, center_z=30.0, size_x=15.0, size_y=25.0, size_z=35.0)
-        pass
+        assert np.allclose(grid_box.center, [10.0, 20.0, 30.0])
+        assert np.allclose(grid_box.size, [15.0, 25.0, 35.0])
 
-    @pytest.mark.skip(reason="未実装のテスト")
     def test_initialization_with_arrays(self):
         """配列による初期化のテスト"""
         center = np.array([10.0, 20.0, 30.0])
         size = np.array([15.0, 25.0, 35.0])
         grid_box = GridBox(center=center, size=size)
-        pass
+        assert np.allclose(grid_box.center, center)
+        assert np.allclose(grid_box.size, size)
 
-    @pytest.mark.skip(reason="未実装のテスト")
     def test_get_center(self, sample_grid_box):
         """中心座標の取得のテスト"""
-        pass
+        assert sample_grid_box.center.shape == (3,)
+        assert np.allclose(sample_grid_box.center, [10.0, 20.0, 30.0])
 
-    @pytest.mark.skip(reason="未実装のテスト")
     def test_get_size(self, sample_grid_box):
         """サイズの取得のテスト"""
-        pass
+        assert sample_grid_box.size.shape == (3,)
+        assert np.allclose(sample_grid_box.size, [15.0, 25.0, 35.0])
 
-    @pytest.mark.skip(reason="実際のCompoundSetが必要なテスト")
     def test_from_compound(self):
         """化合物からGridBoxを生成するテスト"""
         # テスト用のCompoundSetを作成
-        compound_set = CompoundSet(path="examples/input/ALDR/crystal_ligand.mol2")
+        compound_set = CompoundSet(path="/workspaces/20260422_mouse_docking/docking_automation/examples/input/ALDR/crystal_ligand.mol2")
 
         # GridBoxを生成
         grid_box = GridBox.from_compound(compound_set)
