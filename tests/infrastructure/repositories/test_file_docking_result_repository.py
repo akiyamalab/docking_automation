@@ -80,6 +80,7 @@ END
         compound_index=0,
         docking_score=-8.5,
         protein_content_hash="protein_hash_1",
+        compound_content_hash="test_compound_hash",
         compoundset_content_hash="compound_hash_1",
         metadata={
             "compound_name": "Compound_1",
@@ -147,6 +148,7 @@ END
             compound_index=compound_index,
             docking_score=docking_score,
             protein_content_hash=f"protein_hash_{protein_id}",
+            compound_content_hash="test_compound_hash",
             compoundset_content_hash=f"compound_hash_{compound_set_id}",
             metadata={
                 "compound_name": f"Compound_{compound_set_id}_{compound_index}",
