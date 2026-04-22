@@ -66,6 +66,8 @@ def dock_one_protein(
     top_n_poses: int = 1,
     backend: str = "vina",
     search_mode: str = "balance",
+    score_threshold_max: float = 5.0,
+    score_threshold_min: float = -30.0,
 ) -> List[dict]:
     """1タンパク質の指定化合物群ドッキングをDaskワーカーで実行する。
 
@@ -189,6 +191,18 @@ def dock_one_protein(
                 continue
 
             score = _parse_unidock_score_from_pdbqt(out_pdbqt)
+            if score is not None and (score >= score_threshold_max or score <= score_threshold_min):
+                results.append({
+                    "protein_id": protein_id,
+                    "compound_index": idx,
+                    "protein_content_hash": protein_content_hash,
+                    "compound_content_hash": c_hash,
+                    "score": None,
+                    "pose_blob": None,
+                    "elapsed_sec": elapsed_per,
+                    "error": "unidock_score_filtered",
+                })
+                continue
             if score is None:
                 results.append({
                     "protein_id": protein_id,

@@ -377,3 +377,97 @@ def test_backend_propagated_to_dock_one_protein(tmp_path):
     assert call_kwargs.get("backend") == "unidock", (
         f"backend kwarg が 'unidock' でない: {call_kwargs}"
     )
+
+
+# ── dock_one_protein フィルタテスト ─────────────────────────────────────────────
+
+def test_dock_one_protein_unidock_penalty_filtered(tmp_path):
+    """dock_one_protein: penalty score (999999) がフィルタされて score=None になること"""
+    from unittest.mock import patch
+    from pathlib import Path
+    from docking_automation.docking.screening_runner import dock_one_protein
+
+    PENALTY_SCORE = 999999.0
+    PDBQT_CONTENT = f"REMARK VINA RESULT:   {PENALTY_SCORE}   0.000   0.000\n"
+
+    def fake_subprocess_run(cmd, **kwargs):
+        out_dir = Path(cmd[cmd.index("--dir") + 1])
+        (out_dir / "compound_0_out.pdbqt").write_text(PDBQT_CONTENT)
+        result = MagicMock()
+        result.returncode = 0
+        return result
+
+    with patch("docking_automation.converters.molecule_converter.MoleculeConverter") as MockConv, \
+         patch("docking_automation.infrastructure.utilities.file_utils.read_compounds_from_sdf") as mock_read, \
+         patch("docking_automation.molecule.protein.Protein") as MockProtein, \
+         patch("subprocess.run", side_effect=fake_subprocess_run):
+
+        mock_conv = MockConv.return_value
+        mock_conv.protein_to_pdbqt.side_effect = lambda protein, dst: dst.write_text("fake receptor")
+        mock_conv.sdf_to_pdbqt.side_effect = lambda src, dst: dst.write_text("fake ligand")
+        mock_read.return_value = iter([(None, ["fake\n"])])
+        MockProtein.return_value = MagicMock()
+
+        results = dock_one_protein(
+            protein_path=str(tmp_path / "prot.pdb"),
+            protein_id="prot1",
+            protein_content_hash="hash_p1",
+            compound_sdf_path=str(tmp_path / "compounds.sdf"),
+            compound_indices=[0],
+            compound_hashes={0: "hash_c0"},
+            grid_center=[0.0, 0.0, 0.0],
+            grid_size=[20.0, 20.0, 20.0],
+            backend="unidock",
+        )
+
+    assert len(results) == 1
+    assert results[0]["score"] is None
+    assert results[0]["compound_index"] == 0
+    assert results[0]["error"] == "unidock_score_filtered"
+
+
+def test_dock_one_protein_unidock_valid_score_passes(tmp_path):
+    """dock_one_protein: valid score (-7.5) がフィルタを通過して結果に含まれること"""
+    from unittest.mock import patch
+    from pathlib import Path
+    from docking_automation.docking.screening_runner import dock_one_protein
+
+    VALID_SCORE = -7.5
+    PDBQT_CONTENT = f"REMARK VINA RESULT:   {VALID_SCORE}   0.000   0.000\n"
+
+    def fake_subprocess_run(cmd, **kwargs):
+        out_dir = Path(cmd[cmd.index("--dir") + 1])
+        pdbqt_file = out_dir / "compound_0_out.pdbqt"
+        pdbqt_file.write_text(PDBQT_CONTENT)
+        result = MagicMock()
+        result.returncode = 0
+        return result
+
+    with patch("docking_automation.converters.molecule_converter.MoleculeConverter") as MockConv, \
+         patch("docking_automation.infrastructure.utilities.file_utils.read_compounds_from_sdf") as mock_read, \
+         patch("docking_automation.molecule.protein.Protein") as MockProtein, \
+         patch("subprocess.run", side_effect=fake_subprocess_run):
+
+        mock_conv = MockConv.return_value
+        mock_conv.protein_to_pdbqt.side_effect = lambda protein, dst: dst.write_text("fake receptor")
+        mock_conv.sdf_to_pdbqt.side_effect = lambda src, dst: dst.write_text("fake ligand")
+        mock_conv.pdbqt_to_sdf.side_effect = Exception("skip sdf conversion")
+        mock_read.return_value = iter([(None, ["fake\n"])])
+        MockProtein.return_value = MagicMock()
+
+        results = dock_one_protein(
+            protein_path=str(tmp_path / "prot.pdb"),
+            protein_id="prot1",
+            protein_content_hash="hash_p1",
+            compound_sdf_path=str(tmp_path / "compounds.sdf"),
+            compound_indices=[0],
+            compound_hashes={0: "hash_c0"},
+            grid_center=[0.0, 0.0, 0.0],
+            grid_size=[20.0, 20.0, 20.0],
+            backend="unidock",
+        )
+
+    assert len(results) == 1
+    assert results[0]["score"] == VALID_SCORE
+    assert results[0]["compound_index"] == 0
+    assert results[0]["error"] is None
