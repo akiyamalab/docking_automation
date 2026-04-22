@@ -54,5 +54,15 @@ RUN apt install -y dssp
 RUN mkdir -p /AlphaCutter
 RUN wget https://raw.githubusercontent.com/johnnytam100/AlphaCutter/c1b8a96024f71509ac700ef232f632c13e40a886/AlphaCutter_v111.py -O /AlphaCutter/AlphaCutter_v111.py
 # conda should be prioritized compared to adfr
-ENV PATH /opt/conda/bin:/opt/conda/condabin:$PATH 
+ENV PATH /opt/conda/bin:/opt/conda/condabin:$PATH
+
+#### Uni-Dock (GPU docking backend, Phase 3+) ####
+# nvcc (CUDA compiler) is not available in the runtime-only CUDA image,
+# so we use the pre-built binary from GitHub Releases (CUDA 12.0 compatible with 12.x).
+ENV CUDA_HOME=/usr/local/cuda-12.4
+ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+RUN pip install unidock-tools
+RUN wget -q "https://github.com/dptech-corp/Uni-Dock/releases/download/1.1.0/unidock-1.1.0-cuda120-linux-x86_64" \
+    -O /usr/local/bin/unidock \
+    && chmod +x /usr/local/bin/unidock
 
