@@ -48,6 +48,7 @@ class CompoundSet:
         self.__id: str = id if id is not None else self.__path.stem
         self.__domain_events: List[DomainEvent] = []
         self.__index_range: Optional[Tuple[int, int]] = None  # インデックス範囲（開始、終了）
+        self.__indices: Optional[List[int]] = None  # 個別インデックスのリスト（分割時にwith_indicesで設定）
         self.__compound_count: Optional[int] = None  # 化合物数のキャッシュ
         self.__compound_hash_cache: Dict[int, str] = {}  # インデックス -> 化合物ハッシュ値のキャッシュ
 
@@ -399,7 +400,7 @@ class CompoundSet:
             化合物のリスト
         """
         # 優先順位1: インデックスセットが設定されている場合
-        if getattr(self, "_CompoundSet__indices", None) is not None:
+        if self.__indices is not None:
             return [self.get_compound(i) for i in self.__indices]
         
         # 優先順位2: インデックス範囲が設定されている場合
@@ -497,7 +498,7 @@ class CompoundSet:
             化合物のイテレータ
         """
         # 優先順位1: インデックスセットが設定されている場合
-        if getattr(self, "_CompoundSet__indices", None) is not None:
+        if self.__indices is not None:
             for i in self.__indices:
                 yield self.get_compound(i)
         # 優先順位2: インデックス範囲が設定されている場合
@@ -523,7 +524,7 @@ class CompoundSet:
             化合物の数
         """
         # 優先順位1: インデックスセットが設定されている場合
-        if getattr(self, "_CompoundSet__indices", None) is not None:
+        if self.__indices is not None:
             return len(self.__indices)
         
         # 優先順位2: インデックス範囲が設定されている場合
@@ -559,7 +560,7 @@ class CompoundSet:
         }
 
         # 優先順位1: インデックスセットが設定されている場合
-        if getattr(self, "_CompoundSet__indices", None) is not None:
+        if self.__indices is not None:
             properties["indices"] = self.__indices
             properties["total_compounds"] = self.get_compound_count()  # 全体の化合物の数
         # 優先順位2: インデックス範囲が設定されている場合
@@ -582,7 +583,7 @@ class CompoundSet:
         """すべての化合物のハッシュ値を計算してキャッシュする"""
         for i, (idx, compound_lines) in enumerate(read_compounds_from_sdf(self.path)):
             # 化合物のテキスト表現からハッシュ値を計算
-            content = "".join(compound_lines)
+            content = "".join(str(line) for line in compound_lines)
             hash_value = hashlib.sha256(content.encode("utf-8")).hexdigest()
             self.__compound_hash_cache[i] = hash_value
 

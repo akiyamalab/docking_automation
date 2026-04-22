@@ -129,7 +129,7 @@ class MoleculeConverter:
         # Proteinオブジェクトを作成
         return Protein(output_path, id)
 
-    def compound_to_rdkit(self, compound: CompoundSet) -> List[Chem.Mol]:
+    def compound_to_rdkit(self, compound: CompoundSet) -> List[Chem.Mol]:  # type: ignore[name-defined]
         """
         CompoundSetオブジェクトからRDKitの分子オブジェクトのリストに変換する。
 
@@ -157,9 +157,9 @@ class MoleculeConverter:
 
                 if file_format == "sdf":
                     # SDFファイルを読み込む
-                    suppl = Chem.SDMolSupplier(str(temp_path))
+                    suppl = Chem.SDMolSupplier(str(temp_path))  # type: ignore[attr-defined]
                     # TODO: 何件の化合物がファイルに含まれており、何件を正常に読み込めたかをログに残すべきである。
-                    mols: list[Chem.Mol] = [mol for mol in suppl if mol is not None]
+                    mols: list[Chem.Mol] = [mol for mol in suppl if mol is not None]  # type: ignore[name-defined]
                 else:
                     raise ValueError(f"サポートされていないファイル形式です: {file_format}")
 
@@ -168,10 +168,10 @@ class MoleculeConverter:
         else:
             if file_format.lower() == "sdf":
                 # SDFファイルを読み込む
-                suppl = Chem.SDMolSupplier(str(compound.path))
+                suppl = Chem.SDMolSupplier(str(compound.path))  # type: ignore[attr-defined]
                 mols = [mol for mol in suppl if mol is not None]
             elif file_format.lower() == "mol2":
-                mol = Chem.MolFromMol2File(str(compound.path), removeHs=False)
+                mol = Chem.MolFromMol2File(str(compound.path), removeHs=False)  # type: ignore[attr-defined]
                 mols = [mol] if mol is not None else []
             else:
                 raise ValueError(f"サポートされていないファイル形式です: {file_format}")
@@ -179,7 +179,7 @@ class MoleculeConverter:
         return mols
 
     # TODO: id は optional であるべき。
-    def rdkit_to_compound(self, mols: List[Chem.Mol], id: str, output_path: Path) -> CompoundSet:
+    def rdkit_to_compound(self, mols: List[Chem.Mol], id: str, output_path: Path) -> CompoundSet:  # type: ignore[name-defined]
         """
         RDKitの分子オブジェクトのリストからCompoundSetオブジェクトに変換する。
 
@@ -195,7 +195,7 @@ class MoleculeConverter:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # SDFファイルとして保存
-        writer = Chem.SDWriter(str(output_path))
+        writer = Chem.SDWriter(str(output_path))  # type: ignore[attr-defined]
         for mol in mols:
             writer.write(mol)
         writer.close()

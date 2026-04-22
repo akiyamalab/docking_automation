@@ -161,7 +161,10 @@ class AutoDockVina(DockingToolABC):
 
         # 前処理済みのタンパク質と化合物セット
         protein = common_params.protein
-        compound_set: Union[CompoundSet, PreprocessedCompoundSet] = common_params.compound_set
+        compound_set: PreprocessedCompoundSet = common_params.compound_set
+
+        if protein.file_path is None:
+            raise ValueError("PreprocessedProtein.file_path が未設定のため AutoDock Vina を実行できません")
         grid_box = common_params.grid_box
 
         # ファイルパスを取得

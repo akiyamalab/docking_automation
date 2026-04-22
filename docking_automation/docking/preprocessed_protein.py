@@ -16,7 +16,7 @@ class PreprocessedProtein:
     実際にどのフィールドを使うかはドッキングツールによって依存する。
     """
 
-    def __init__(self, file_path: Path = None, data: Optional[object] = None):
+    def __init__(self, file_path: Optional[Path] = None, data: Optional[object] = None):
         """
         前処理済みのタンパク質を表すオブジェクトを初期化する。
 
@@ -37,4 +37,6 @@ class PreprocessedProtein:
         Returns:
             ファイル内容のSHA-256ハッシュ値（16進数文字列）
         """
+        if self.file_path is None:
+            raise ValueError("file_path が設定されていないため content_hash を計算できません")
         return calculate_file_content_hash(self.file_path)

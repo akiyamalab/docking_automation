@@ -132,7 +132,7 @@ def dock_one_protein(
         out_dir = temp_dir / "unidock_out"
         out_dir.mkdir()
 
-        results = []
+        results: List[Dict[str, Any]] = []
         if valid_indices:
             ligand_index_path = temp_dir / "ligands.txt"
             ligand_index_path.write_text(
@@ -163,7 +163,8 @@ def dock_one_protein(
 
         for idx in compound_indices:
             c_hash = compound_hashes.get(idx)
-            if compound_pdbqt_map.get(idx) is None:
+            compound_pdbqt_for_idx: Optional[Path] = compound_pdbqt_map.get(idx)
+            if compound_pdbqt_for_idx is None:
                 results.append({
                     "protein_id": protein_id,
                     "compound_index": idx,
@@ -176,7 +177,7 @@ def dock_one_protein(
                 })
                 continue
 
-            stem = compound_pdbqt_map[idx].stem
+            stem = compound_pdbqt_for_idx.stem
             out_pdbqt = out_dir / f"{stem}_out.pdbqt"
 
             if not out_pdbqt.exists():
@@ -239,11 +240,11 @@ def dock_one_protein(
         # rescue_mode: score=None で失敗した化合物を rescue_search_mode で再試行
         if rescue_mode:
             _RESCUABLE_ERRORS = {"unidock_score_parse_failed", "unidock_output_missing"}
-            rescue_indices = [
-                r["compound_index"]
+            rescue_indices: List[int] = [
+                int(r["compound_index"])
                 for r in results
                 if r["score"] is None and r.get("error") in _RESCUABLE_ERRORS
-                and compound_pdbqt_map.get(r["compound_index"]) is not None
+                and compound_pdbqt_map.get(int(r["compound_index"])) is not None
             ]
             if rescue_indices:
                 rescue_out_dir = temp_dir / "unidock_rescue_out"
@@ -272,7 +273,9 @@ def dock_one_protein(
 
                 rescue_result_map: Dict[int, dict] = {}
                 for idx in rescue_indices:
-                    stem = compound_pdbqt_map[idx].stem
+                    rescue_compound_pdbqt = compound_pdbqt_map[idx]
+                    assert rescue_compound_pdbqt is not None  # rescue_indices で None は除外済み
+                    stem = rescue_compound_pdbqt.stem
                     out_pdbqt = rescue_out_dir / f"{stem}_out.pdbqt"
                     if not out_pdbqt.exists():
                         continue
@@ -312,13 +315,13 @@ def dock_one_protein(
         box_size=[float(s) for s in grid_size],
     )
 
-    results = []
+    vina_results: List[Dict[str, Any]] = []
     for compound_index in compound_indices:
         t0 = time.monotonic()
-        compound_pdbqt = compound_pdbqt_map.get(compound_index)
+        ligand_pdbqt = compound_pdbqt_map.get(compound_index)
         c_hash = compound_hashes.get(compound_index)
 
-        if compound_pdbqt is None:
+        if ligand_pdbqt is None:
             results.append({
                 "protein_id": protein_id,
                 "compound_index": compound_index,
@@ -335,7 +338,7 @@ def dock_one_protein(
             output_pdbqt = temp_dir / f"output_{compound_index}.pdbqt"
             output_sdf = temp_dir / f"output_{compound_index}.sdf"
 
-            v.set_ligand_from_file(str(compound_pdbqt))
+            v.set_ligand_from_file(str(ligand_pdbqt))
             v.dock(exhaustiveness=exhaustiveness, n_poses=top_n_poses, min_rmsd=1.0)
             v.write_poses(str(output_pdbqt), n_poses=top_n_poses, overwrite=True)
             converter.pdbqt_to_sdf(output_pdbqt, output_sdf)
@@ -344,7 +347,7 @@ def dock_one_protein(
             score = float(scores[0, 0])
             pose_blob = gz.compress(output_sdf.read_bytes(), compresslevel=9)
 
-            results.append({
+            vina_results.append({
                 "protein_id": protein_id,
                 "compound_index": compound_index,
                 "protein_content_hash": protein_content_hash,
@@ -355,7 +358,7 @@ def dock_one_protein(
                 "error": None,
             })
         except Exception as e:
-            results.append({
+            vina_results.append({
                 "protein_id": protein_id,
                 "compound_index": compound_index,
                 "protein_content_hash": protein_content_hash,
@@ -366,7 +369,7 @@ def dock_one_protein(
                 "error": str(e),
             })
 
-    return results
+    return vina_results
 
 
 class ScreeningRunner:
@@ -511,6 +514,8 @@ class ScreeningRunner:
         for protein_id, compound_indices in pairs_by_protein.items():
             protein = self.protein_set[protein_id]
             grid_box = self.grid_box_cache.get(protein)
+            if grid_box is None:
+                raise ValueError(f"GridBox が grid_box_cache 未登録です: protein_id={protein_id}")
             p_hash = protein_hashes[protein_id]
             compound_hashes = {
                 idx: self.compound_set.get_compound_hash(idx)

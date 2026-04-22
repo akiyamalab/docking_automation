@@ -75,8 +75,11 @@ class UniDockDocking(DockingToolABC):
     ) -> Tuple[List[DockingResult], List[int]]:
         ligand_paths = [compound_set.file_paths[i] for i in ligand_indices]
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
+        if protein.file_path is None:
+            raise ValueError("PreprocessedProtein.file_path が未設定のため UniDock を実行できません")
+
+        with tempfile.TemporaryDirectory() as tmpdir_str:
+            tmpdir = Path(tmpdir_str)
 
             ligand_index = tmpdir / "ligands.txt"
             ligand_index.write_text("\n".join(str(f) for f in ligand_paths))
@@ -159,6 +162,7 @@ class UniDockDocking(DockingToolABC):
             compound_hash = compound_set.get_compound_hash(orig_idx)
             compound_set_id = stem.rsplit("_", 1)[0] if "_" in stem else stem
 
+            assert protein.file_path is not None  # 上位メソッドでガード済み
             results.append(DockingResult(
                 result_path=result_path,
                 protein_id=protein.file_path.stem,

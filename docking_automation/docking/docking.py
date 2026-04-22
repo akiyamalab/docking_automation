@@ -106,7 +106,7 @@ class DockingToolABC(ABC):
         compound_set: CompoundSet,
         grid_box: GridBox,
         additional_params: SpecificDockingParametersABC,
-        compound_indices: set[int] = None,
+        compound_indices: Optional[Set[int]] = None,
     ) -> DockingResultCollection:
         """
         ドッキング計算を実行し、結果をコレクションとして返す。
@@ -180,7 +180,7 @@ class DockingToolABC(ABC):
         # 派生クラスでこのメソッドをオーバーライドしない場合は、デフォルトの実装として
         # dock メソッドにリポジトリを渡す
         if hasattr(self.dock, "__code__") and "repository" in self.dock.__code__.co_varnames:
-            results = self.dock(parameters, repository=repository)
+            results = self.dock(parameters, repository=repository)  # type: ignore[call-arg]
         else:
             # リポジトリを受け付けないdockメソッドの場合は、通常のdockメソッドを呼び出す
             results = self.dock(parameters)
