@@ -22,6 +22,9 @@ RUN apt-get install -y cmake gcc g++ git \
 
 #### AutoDock Vina ####
 RUN pip install vina
+
+#### Dimorphite-DL (protonation at physiological pH) ####
+RUN pip install dimorphite-dl==1.2.5
 # ENV ADVINA_HOME /advina
 # ENV ADVINA_VER  1.1.2
 # ENV PATH $ADVINA_HOME/$ADVINA_VER/bin:$PATH
