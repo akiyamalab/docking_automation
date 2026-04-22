@@ -68,6 +68,8 @@ def dock_one_protein(
     search_mode: str = "balance",
     score_threshold_max: float = 5.0,
     score_threshold_min: float = -30.0,
+    rescue_mode: bool = False,
+    rescue_search_mode: str = "detail",
 ) -> List[dict]:
     """1タンパク質の指定化合物群ドッキングをDaskワーカーで実行する。
 
@@ -234,6 +236,70 @@ def dock_one_protein(
                 "error": None,
             })
 
+        # rescue_mode: score=None で失敗した化合物を rescue_search_mode で再試行
+        if rescue_mode:
+            _RESCUABLE_ERRORS = {"unidock_score_parse_failed", "unidock_output_missing"}
+            rescue_indices = [
+                r["compound_index"]
+                for r in results
+                if r["score"] is None and r.get("error") in _RESCUABLE_ERRORS
+                and compound_pdbqt_map.get(r["compound_index"]) is not None
+            ]
+            if rescue_indices:
+                rescue_out_dir = temp_dir / "unidock_rescue_out"
+                rescue_out_dir.mkdir()
+                rescue_ligand_index_path = temp_dir / "rescue_ligands.txt"
+                rescue_ligand_index_path.write_text(
+                    "\n".join(str(compound_pdbqt_map[i]) for i in rescue_indices) + "\n"
+                )
+                cx, cy, cz = [float(c) for c in grid_center]
+                sx, sy, sz = [float(s) for s in grid_size]
+                rescue_cmd = [
+                    "unidock",
+                    "--receptor", str(pdbqt_path),
+                    "--ligand_index", str(rescue_ligand_index_path),
+                    "--center_x", str(cx), "--center_y", str(cy), "--center_z", str(cz),
+                    "--size_x", str(sx), "--size_y", str(sy), "--size_z", str(sz),
+                    "--search_mode", rescue_search_mode,
+                    "--num_modes", "1",
+                    "--seed", "1",
+                    "--verbosity", "0",
+                    "--dir", str(rescue_out_dir),
+                ]
+                tr0 = time.monotonic()
+                subprocess.run(rescue_cmd, capture_output=True, text=True, timeout=600, check=False)
+                rescue_elapsed_per = round((time.monotonic() - tr0) / len(rescue_indices), 3)
+
+                rescue_result_map: Dict[int, dict] = {}
+                for idx in rescue_indices:
+                    stem = compound_pdbqt_map[idx].stem
+                    out_pdbqt = rescue_out_dir / f"{stem}_out.pdbqt"
+                    if not out_pdbqt.exists():
+                        continue
+                    score = _parse_unidock_score_from_pdbqt(out_pdbqt)
+                    if score is None:
+                        continue
+                    if score >= score_threshold_max or score <= score_threshold_min:
+                        continue
+                    out_sdf = rescue_out_dir / f"{stem}_out.sdf"
+                    try:
+                        converter.pdbqt_to_sdf(out_pdbqt, out_sdf)
+                        pose_blob = gz.compress(out_sdf.read_bytes(), compresslevel=9)
+                    except Exception:
+                        pose_blob = gz.compress(out_pdbqt.read_bytes(), compresslevel=9)
+                    rescue_result_map[idx] = {
+                        "score": score,
+                        "pose_blob": pose_blob,
+                        "elapsed_sec": rescue_elapsed_per,
+                    }
+
+                results = [
+                    {**r, **rescue_result_map[r["compound_index"]], "error": None}
+                    if r["compound_index"] in rescue_result_map
+                    else r
+                    for r in results
+                ]
+
         return results
 
     # --- Vina path ---
@@ -323,6 +389,7 @@ class ScreeningRunner:
         search_mode: str = "balance",
         schema_version: str = "v2",
         extra_padding: float = 5.0,
+        rescue_mode: bool = False,
         _dock_fn: Optional[Callable] = None,
         _cluster_kwargs: Optional[dict] = None,
     ) -> None:
@@ -341,6 +408,7 @@ class ScreeningRunner:
         self.search_mode = search_mode
         self.schema_version = schema_version
         self.extra_padding = extra_padding
+        self.rescue_mode = rescue_mode
         self._dock_fn = _dock_fn
         self._cluster_kwargs = _cluster_kwargs or {}
 
@@ -464,6 +532,7 @@ class ScreeningRunner:
                 self.top_n_poses,
                 backend=self.backend,
                 search_mode=self.search_mode,
+                rescue_mode=self.rescue_mode,
             )
             futures[future] = protein_id
 

@@ -214,6 +214,8 @@ def _fake_dock_one_protein(
     top_n_poses=1,
     backend="vina",
     search_mode="balance",
+    rescue_mode=False,
+    rescue_search_mode="detail",
 ):
     """テスト用: ファイルアクセスなしに即座にフェイク結果を返す。"""
     import gzip
@@ -510,6 +512,104 @@ def test_extra_padding_increases_box_size(tmp_path):
     assert passed_size == pytest.approx(expected), (
         f"期待サイズ: {expected}, 実際: {passed_size}"
     )
+
+
+# ── rescue_mode テスト ──────────────────────────────────────────────────────────
+
+def test_dock_one_protein_unidock_rescue_retries_failed(tmp_path):
+    """dock_one_protein: rescue_mode=True で score=None の化合物が再試行されること。"""
+    from unittest.mock import patch, call as mock_call
+    from pathlib import Path
+    from docking_automation.docking.screening_runner import dock_one_protein
+
+    VALID_SCORE = -8.0
+    RESCUE_PDBQT = f"REMARK VINA RESULT:   {VALID_SCORE}   0.000   0.000\n"
+
+    call_count = {"n": 0}
+
+    def fake_subprocess_run(cmd, **kwargs):
+        call_count["n"] += 1
+        out_dir = Path(cmd[cmd.index("--dir") + 1])
+        # 初回呼び出し: 出力なし（score=None を誘発）
+        # 2回目（rescue）: 正常スコアを返す
+        if call_count["n"] == 2:
+            (out_dir / "compound_0_out.pdbqt").write_text(RESCUE_PDBQT)
+        result = MagicMock()
+        result.returncode = 0
+        return result
+
+    with patch("docking_automation.converters.molecule_converter.MoleculeConverter") as MockConv, \
+         patch("docking_automation.infrastructure.utilities.file_utils.read_compounds_from_sdf") as mock_read, \
+         patch("docking_automation.molecule.protein.Protein") as MockProtein, \
+         patch("subprocess.run", side_effect=fake_subprocess_run):
+
+        mock_conv = MockConv.return_value
+        mock_conv.protein_to_pdbqt.side_effect = lambda protein, dst: dst.write_text("fake receptor")
+        mock_conv.sdf_to_pdbqt.side_effect = lambda src, dst: dst.write_text("fake ligand")
+        mock_conv.pdbqt_to_sdf.side_effect = Exception("skip sdf conversion")
+        mock_read.return_value = iter([(None, ["fake\n"])])
+        MockProtein.return_value = MagicMock()
+
+        results = dock_one_protein(
+            protein_path=str(tmp_path / "prot.pdb"),
+            protein_id="prot1",
+            protein_content_hash="hash_p1",
+            compound_sdf_path=str(tmp_path / "compounds.sdf"),
+            compound_indices=[0],
+            compound_hashes={0: "hash_c0"},
+            grid_center=[0.0, 0.0, 0.0],
+            grid_size=[20.0, 20.0, 20.0],
+            backend="unidock",
+            rescue_mode=True,
+        )
+
+    assert call_count["n"] == 2, f"subprocess.run が2回呼ばれるべき: {call_count['n']} 回"
+    assert len(results) == 1
+    assert results[0]["score"] == VALID_SCORE
+    assert results[0]["error"] is None
+
+
+def test_dock_one_protein_unidock_rescue_false(tmp_path):
+    """dock_one_protein: rescue_mode=False では再試行しないこと。"""
+    from unittest.mock import patch
+    from pathlib import Path
+    from docking_automation.docking.screening_runner import dock_one_protein
+
+    call_count = {"n": 0}
+
+    def fake_subprocess_run(cmd, **kwargs):
+        call_count["n"] += 1
+        result = MagicMock()
+        result.returncode = 0
+        return result
+
+    with patch("docking_automation.converters.molecule_converter.MoleculeConverter") as MockConv, \
+         patch("docking_automation.infrastructure.utilities.file_utils.read_compounds_from_sdf") as mock_read, \
+         patch("docking_automation.molecule.protein.Protein") as MockProtein, \
+         patch("subprocess.run", side_effect=fake_subprocess_run):
+
+        mock_conv = MockConv.return_value
+        mock_conv.protein_to_pdbqt.side_effect = lambda protein, dst: dst.write_text("fake receptor")
+        mock_conv.sdf_to_pdbqt.side_effect = lambda src, dst: dst.write_text("fake ligand")
+        mock_read.return_value = iter([(None, ["fake\n"])])
+        MockProtein.return_value = MagicMock()
+
+        results = dock_one_protein(
+            protein_path=str(tmp_path / "prot.pdb"),
+            protein_id="prot1",
+            protein_content_hash="hash_p1",
+            compound_sdf_path=str(tmp_path / "compounds.sdf"),
+            compound_indices=[0],
+            compound_hashes={0: "hash_c0"},
+            grid_center=[0.0, 0.0, 0.0],
+            grid_size=[20.0, 20.0, 20.0],
+            backend="unidock",
+            rescue_mode=False,
+        )
+
+    assert call_count["n"] == 1, f"subprocess.run が1回のみ呼ばれるべき: {call_count['n']} 回"
+    assert len(results) == 1
+    assert results[0]["score"] is None
 
 
 def test_extra_padding_zero_unchanged(tmp_path):
