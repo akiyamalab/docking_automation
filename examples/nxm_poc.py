@@ -89,29 +89,38 @@ def grid_box_centroid(pdb_path: Path, size: float = 30.0):
     return GridBox(center=tuple(center), size=(size, size, size))
 
 
-def prepare_extended20() -> Path:
-    """actives_final.sdf.gz から先頭20件を抽出して actives_extended20.sdf を生成する。"""
+def prepare_extended20(
+    subset_path: Path = ACTIVES_SUBSET_SDF,
+    gz_path: Path = ACTIVES_FINAL_GZ,
+    out_path: Path = ACTIVES_EXTENDED20_SDF,
+    extra: int = 10,
+) -> tuple:
+    """actives_subset.sdf (10件) + gz_path から新規extra件を結合して out_path に書き出す。
+
+    Returns:
+        (n_subset, n_new): subsetの件数と新規追加件数のタプル
+    """
     from rdkit import Chem
-    from rdkit.Chem import SDWriter
 
-    if ACTIVES_EXTENDED20_SDF.exists():
-        return ACTIVES_EXTENDED20_SDF
+    subset_mols = [m for m in Chem.SDMolSupplier(str(subset_path)) if m]
+    subset_smiles = {Chem.MolToSmiles(m) for m in subset_mols}
 
-    print("actives_extended20.sdf を生成中...")
-    writer = SDWriter(str(ACTIVES_EXTENDED20_SDF))
-    count = 0
-    with gzip.open(ACTIVES_FINAL_GZ, "rb") as f:
-        suppl = Chem.ForwardSDMolSupplier(f)
-        for mol in suppl:
-            if mol is None:
-                continue
-            writer.write(mol)
-            count += 1
-            if count >= 20:
-                break
+    new_mols = []
+    with gzip.open(gz_path, "rb") as f:
+        supplier = Chem.ForwardSDMolSupplier(f)
+        for mol in supplier:
+            if mol and len(new_mols) < extra:
+                smi = Chem.MolToSmiles(mol)
+                if smi not in subset_smiles:
+                    new_mols.append(mol)
+
+    print(f"actives_extended20.sdf を生成中 (subset={len(subset_mols)}, new={len(new_mols)})...")
+    writer = Chem.SDWriter(str(out_path))
+    for m in subset_mols + new_mols:
+        writer.write(m)
     writer.close()
-    print(f"actives_extended20.sdf 生成完了: {count}件")
-    return ACTIVES_EXTENDED20_SDF
+    print(f"actives_extended20.sdf 生成完了: {len(subset_mols) + len(new_mols)}件")
+    return len(subset_mols), len(new_mols)
 
 
 def _count_residues(pdb_path: Path) -> int:
@@ -364,11 +373,17 @@ def parse_args():
     parser.add_argument(
         "--protein-list", type=Path, default=None, help="protein_list.json のパス（デフォルト: afdb_mouse/protein_list.json）"
     )
+    parser.add_argument(
+        "--hdf5-dir", type=Path, default=None, help="HDF5出力ディレクトリ（デフォルト: output/nxm_poc_hdf5）"
+    )
     return parser.parse_args()
 
 
 def main():
+    global HDF5_DIR
     args = parse_args()
+    if args.hdf5_dir is not None:
+        HDF5_DIR = args.hdf5_dir
 
     print("=== N×M ドッキングPoC 開始 ===")
     print(f"作業ディレクトリ: {PROJECT_DIR}")
