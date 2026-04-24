@@ -306,3 +306,49 @@ class TestUniDockDocking:
 
         assert "--seed" in captured_cmd
         assert captured_cmd[captured_cmd.index("--seed") + 1] == "1"
+
+
+# --- CacheableReceptorDocking 準拠テスト ---
+
+from docking_automation.docking.cacheable_receptor_docking import CacheableReceptorDocking
+from docking_automation.docking.grid_box import GridBox
+
+
+def test_unidock_conforms_to_cacheable_protocol():
+    """UniDockDocking が CacheableReceptorDocking Protocol に準拠していること。"""
+    tool = UniDockDocking()
+    assert isinstance(tool, CacheableReceptorDocking)
+
+
+def test_prepare_receptor_cache_skips_existing(tmp_path):
+    """既存の .map 群がある場合は unidock CLI を呼ばない。"""
+    tool = UniDockDocking()
+    cache = tmp_path / 'myrec'
+    (tmp_path / 'myrec.C_H.map').write_text('dummy')
+
+    called = {'count': 0}
+    real_run = __import__('subprocess').run
+
+    def fake_run(*args, **kwargs):
+        called['count'] += 1
+        return real_run(['true'], capture_output=True)
+
+    with patch('docking_automation.docking.unidock_docking.subprocess.run', fake_run):
+        result = tool.prepare_receptor_cache(
+            protein=MagicMock(),
+            grid_box=GridBox(center=[0.0, 0.0, 0.0], size=[30.0, 30.0, 30.0]),
+            out_cache=cache,
+        )
+    assert result == cache
+    assert called['count'] == 0, 'unidock CLI が呼ばれるべきでない'
+
+
+def test_write_dummy_pdbqt_ligand_is_valid_pdbqt(tmp_path):
+    """cache prep 用ダミー ligand が PDBQT 最小仕様 (ROOT/ENDROOT/TORSDOF) を含む。"""
+    p = tmp_path / 'dummy.pdbqt'
+    UniDockDocking._write_dummy_pdbqt_ligand(p)
+    content = p.read_text()
+    assert 'ROOT' in content
+    assert 'ENDROOT' in content
+    assert 'TORSDOF' in content
+    assert 'ATOM' in content
