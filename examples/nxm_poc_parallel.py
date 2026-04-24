@@ -19,7 +19,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -92,134 +92,122 @@ def dock_one_protein(
             for idx in compound_indices
         ]
 
-    # pybel先にimport（順序厳守）
-    from docking_automation.converters.molecule_converter import MoleculeConverter
+    # ScreeningTool cache API 経由で dock (prepare_receptor_cache で .map を 1 回生成、
+    # dock_with_cache で ligand loop。compute_vina_maps の重複計算を排除)。
     from docking_automation.docking.autodockvina_docking import AutoDockVina
+    from docking_automation.docking.grid_box import GridBox
     from docking_automation.molecule.compound_set import CompoundSet
     from docking_automation.molecule.protein import Protein
-    from vina import Vina
 
-    docking_tool = AutoDockVina()
-    converter = MoleculeConverter()
-
-    # タンパク質前処理
+    tool = AutoDockVina()
     protein = Protein(Path(protein_pdb_path), id=protein_id)
-    try:
-        prep_protein = docking_tool._preprocess_protein(protein)
-    except Exception as e:
-        return [
-            {
-                "score": None,
-                "sdf_content": None,
-                "protein_content_hash": protein.content_hash,
-                "compound_content_hash": None,
-                "compoundset_content_hash": None,
-                "compound_index": idx,
-                "protein_id": protein_id,
-                "compound_set_id": None,
-                "metadata": {},
-                "reused": False,
-                "error": f"タンパク質前処理失敗: {e}",
-                "dock_sec": 0.0,
-            }
-            for idx in compound_indices
-        ]
-
     protein_content_hash = protein.content_hash
 
-    # 化合物セット読み込み・前処理（with_indicesはフィルタ不能のため全件前処理）
-    # compound_indicesはoriginal_idxとしてprep_compounds.file_paths[original_idx]で参照
     full_compound_set = CompoundSet(Path(compound_sdf_path))
     try:
-        prep_compounds = docking_tool._preprocess_compound_set(full_compound_set)
+        prep_compounds = tool._preprocess_compound_set(full_compound_set)
     except Exception as e:
         return [
             {
-                "score": None,
-                "sdf_content": None,
+                "score": None, "sdf_content": None,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": None, "compoundset_content_hash": None,
+                "compound_index": idx, "protein_id": protein_id,
+                "compound_set_id": None, "metadata": {},
+                "reused": False, "error": f"化合物前処理失敗: {e}", "dock_sec": 0.0,
+            }
+            for idx in compound_indices
+        ]
+    compoundset_content_hash = prep_compounds.content_hash
+
+    grid_box = GridBox(
+        center=(float(grid_center[0]), float(grid_center[1]), float(grid_center[2])),
+        size=(float(grid_size[0]), float(grid_size[1]), float(grid_size[2])),
+    )
+
+    cache_dir = Path(tempfile.mkdtemp(prefix='vina_cache_'))
+    cache_prefix = cache_dir / protein_content_hash
+
+    t_start = time.time()
+    try:
+        tool.prepare_receptor_cache(protein, grid_box, cache_prefix)
+    except Exception as e:
+        return [
+            {
+                "score": None, "sdf_content": None,
                 "protein_content_hash": protein_content_hash,
                 "compound_content_hash": None,
-                "compoundset_content_hash": None,
-                "compound_index": idx,
-                "protein_id": protein_id,
-                "compound_set_id": None,
-                "metadata": {},
-                "reused": False,
-                "error": f"化合物前処理失敗: {e}",
-                "dock_sec": 0.0,
+                "compoundset_content_hash": compoundset_content_hash,
+                "compound_index": idx, "protein_id": protein_id,
+                "compound_set_id": None, "metadata": {},
+                "reused": False, "error": f"map 生成失敗: {e}", "dock_sec": 0.0,
             }
             for idx in compound_indices
         ]
 
-    compoundset_content_hash = prep_compounds.content_hash
+    try:
+        ligand_paths = [prep_compounds.file_paths[i] for i in compound_indices]
+        compound_hashes = [prep_compounds.get_compound_hash(i) for i in compound_indices]
+        dock_results = tool.dock_with_cache(
+            cache=cache_prefix,
+            ligand_paths=ligand_paths,
+            grid_box=grid_box,
+            protein_content_hash=protein_content_hash,
+            compound_content_hashes=compound_hashes,
+            exhaustiveness=exhaustiveness,
+            num_modes=3,
+        )
+    except Exception as e:
+        return [
+            {
+                "score": None, "sdf_content": None,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": None,
+                "compoundset_content_hash": compoundset_content_hash,
+                "compound_index": idx, "protein_id": protein_id,
+                "compound_set_id": None, "metadata": {},
+                "reused": False, "error": f"dock_with_cache 失敗: {e}", "dock_sec": 0.0,
+            }
+            for idx in compound_indices
+        ]
+    dock_sec_per = round((time.time() - t_start) / max(len(compound_indices), 1), 3)
 
-    # Vinaインスタンスをタンパク質毎に1回生成
-    v = Vina(cpu=1, seed=1, verbosity=0)
-    v.set_receptor(str(prep_protein.file_path))
-    # compute_vina_maps もタンパク質毎に1回
-    v.compute_vina_maps(
-        center=[float(c) for c in grid_center],
-        box_size=[float(s) for s in grid_size],
-    )
-
-    results = []
-    for original_idx in compound_indices:
-        t_dock_start = time.time()
-        try:
-            # with_indices が実装上フィルタ不能のため original_idx で直接参照
-            compound_path = prep_compounds.file_paths[original_idx]
-            compound_hash = prep_compounds.get_compound_hash(original_idx)
-
-            temp_dir = Path(tempfile.mkdtemp())
-            output_pdbqt = temp_dir / f"output_{original_idx}.pdbqt"
-            output_sdf = temp_dir / f"output_{original_idx}.sdf"
-
-            # 化合物ループ内: set_ligand → dock → energies のみ
-            v.set_ligand_from_file(str(compound_path))
-            v.dock(exhaustiveness=exhaustiveness, n_poses=3, min_rmsd=1.0)
-            v.write_poses(str(output_pdbqt), n_poses=3, overwrite=True)
-            converter.pdbqt_to_sdf(output_pdbqt, output_sdf)
-            scores = v.energies()
-            dock_sec = time.time() - t_dock_start
-
-            results.append(
-                {
-                    "score": float(scores[0, 0]),
-                    "sdf_content": output_sdf.read_text(),
-                    "protein_content_hash": protein_content_hash,
-                    "compound_content_hash": compound_hash,
-                    "compoundset_content_hash": compoundset_content_hash,
-                    "compound_index": original_idx,
-                    "protein_id": protein_id,
-                    "compound_set_id": compound_path.stem.split("_")[0],
-                    "metadata": {
-                        "tool": "AutoDock Vina",
-                        "exhaustiveness": exhaustiveness,
-                        "num_modes": 3,
-                    },
-                    "reused": False,
-                    "error": None,
-                    "dock_sec": round(dock_sec, 3),
-                }
-            )
-        except Exception as e:
-            dock_sec = time.time() - t_dock_start
-            results.append(
-                {
-                    "score": None,
-                    "sdf_content": None,
-                    "protein_content_hash": protein_content_hash,
-                    "compound_content_hash": None,
-                    "compoundset_content_hash": compoundset_content_hash,
-                    "compound_index": original_idx,
-                    "protein_id": protein_id,
-                    "compound_set_id": None,
-                    "metadata": {},
-                    "reused": False,
-                    "error": str(e),
-                    "dock_sec": round(dock_sec, 3),
-                }
-            )
+    # DockingResult → dict 変換。dock_with_cache は compound_index を ligand_paths
+    # 内のローカル index (0..N-1) で返すので、original_idx に対応付け直す。
+    by_local: Dict[int, Any] = {r.compound_index: r for r in dock_results}
+    results: List[dict] = []
+    for local_idx, original_idx in enumerate(compound_indices):
+        r = by_local.get(local_idx)
+        if r is None or r.docking_score is None:
+            results.append({
+                "score": None, "sdf_content": None,
+                "protein_content_hash": protein_content_hash,
+                "compound_content_hash": compound_hashes[local_idx],
+                "compoundset_content_hash": compoundset_content_hash,
+                "compound_index": original_idx, "protein_id": protein_id,
+                "compound_set_id": None, "metadata": {},
+                "reused": False, "error": "dock_failed", "dock_sec": dock_sec_per,
+            })
+            continue
+        sdf_content = r.result_path.read_text() if r.result_path and r.result_path.exists() else None
+        compound_path = Path(prep_compounds.file_paths[original_idx])
+        results.append({
+            "score": float(r.docking_score),
+            "sdf_content": sdf_content,
+            "protein_content_hash": protein_content_hash,
+            "compound_content_hash": compound_hashes[local_idx],
+            "compoundset_content_hash": compoundset_content_hash,
+            "compound_index": original_idx,
+            "protein_id": protein_id,
+            "compound_set_id": compound_path.stem.split("_")[0],
+            "metadata": {
+                "tool": "AutoDock Vina",
+                "exhaustiveness": exhaustiveness,
+                "num_modes": 3,
+                "source": "vina_cached_maps",
+            },
+            "reused": False, "error": None, "dock_sec": dock_sec_per,
+        })
 
     return results
 
