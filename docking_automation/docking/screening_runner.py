@@ -704,6 +704,7 @@ class ScreeningRunner:
                                 "status": "failed",
                                 "score": None,
                                 "elapsed_sec": r["elapsed_sec"],
+                                "error": r.get("error"),
                             }) + "\n")
                         else:
                             bundle_entries.append({
@@ -735,6 +736,7 @@ class ScreeningRunner:
                                 "status": "failed",
                                 "score": None,
                                 "elapsed_sec": r["elapsed_sec"],
+                                "error": r.get("error"),
                             }) + "\n")
                         else:
                             if r.get("pose_blob") is not None:
