@@ -217,6 +217,8 @@ runner.run(protein_set, compound_set, grid_box_cache)
 | Phase 2 | Vina 並列化 | 10×10 | **speedup 3.15×** (4 workers) |
 | Phase 3 | Uni-Dock GPU (RTX 2080 SUPER sm_75) | 10×100 | 249.3 s/1000 ペア, 690 valid / 310 failed |
 | Phase 3 | Vina vs UniDock 相関 | 10×10 | **Pearson r = 0.9580** (production path) |
+| Phase 3 | GPU E2E 冪等性検証 (10×100) | 1,000 | 31.4s (31.8 pairs/s, failed 31, 4 workers) |
+| Phase 3 ext | 中規模 (100×100) | 10,000 | **216.3s (40.8 pairs/s, ≈2,449 pairs/min, 88.25% success, 8 workers)** |
 | Phase 4 | HPC 想定 (H100×8) | 2×10⁸ | 外挿 **3-7 日** |
 
 ## Phase 0 PoC: N×M Docking Execution
