@@ -1,7 +1,7 @@
 """
 DaskExecutorを使って複数のドッキング計算を並列実行するサンプル。
 
-このサンプルでは、DaskExecutorを使って複数のDockingToolABC.run_docking()
+このサンプルでは、DaskExecutorを使って複数の ScreeningTool.run_docking()
 メソッド呼び出しを並列に実行する方法を示します。
 
 Alphafoldで作成されたタンパク質構造をセグメンテーションし、

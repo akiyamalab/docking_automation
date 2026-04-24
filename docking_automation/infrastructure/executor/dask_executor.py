@@ -27,7 +27,7 @@ class DaskExecutor(ExecutorABC):
     """
     Daskを使って並列処理を行うExecutor。
 
-    複数のDockingToolABC.run_docking()メソッド呼び出しを並列に実行します。
+    複数の ScreeningTool.run_docking()メソッド呼び出しを並列に実行します。
     ローカル環境とクラスタ環境（Slurm、PBS等）の両方に対応しています。
 
     Attributes:

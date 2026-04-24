@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from docking_automation.converters.molecule_converter import MoleculeConverter
-from docking_automation.docking.docking import DockingToolABC
+from docking_automation.docking.screening_tool import ScreeningTool
 from docking_automation.docking.docking_parameters import DockingParameters, UniDockParameters
 from docking_automation.docking.docking_result import DockingResult
 from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
@@ -15,7 +15,7 @@ from docking_automation.molecule.compound_set import CompoundSet
 from docking_automation.molecule.protein import Protein
 
 
-class UniDockDocking(DockingToolABC):
+class UniDockDocking(ScreeningTool):
     """Uni-Dock v1.1.0 をサブプロセス呼び出しで利用する DockingTool 実装。
 
     1 run = 1 protein × バッチ ligand（--ligand_index で列挙）。
@@ -188,7 +188,7 @@ class UniDockDocking(DockingToolABC):
                             pass
         return None
 
-    # --- CacheableReceptorDocking 準拠 ---
+    # --- ScreeningTool (旧 CacheableReceptorDocking) 準拠 ---
     # Uni-Dock v1 CLI は --write_maps / --maps で Vina 互換の map cache を
     # 生成・読込できる。v2 のような根本的な高速化ではないが、受容体毎の
     # map 計算 (~数秒) を N×M で繰り返さずに済む。

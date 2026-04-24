@@ -5,7 +5,7 @@ from docking_automation.docking.preprocessed_protein import PreprocessedProtein
 
 from ..molecule.compound_set import CompoundSet
 from ..molecule.protein import Protein
-from .docking import DockingToolABC
+from .screening_tool import ScreeningTool
 from .docking_parameters import DockingParameters, SpecificDockingParametersABC
 from .docking_result import DockingResult
 
@@ -27,7 +27,7 @@ class REstrettoParameters(SpecificDockingParametersABC):
 
 
 # インフラ
-class REstretto(DockingToolABC):
+class REstretto(ScreeningTool):
     """
     REstretto を使ったドッキング計算を行うクラス。
     """

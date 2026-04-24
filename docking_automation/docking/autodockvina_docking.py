@@ -31,7 +31,7 @@ from docking_automation.docking.preprocessed_protein import PreprocessedProtein
 from ..converters.molecule_converter import MoleculeConverter
 from ..molecule.compound_set import CompoundSet
 from ..molecule.protein import Protein
-from .docking import DockingToolABC
+from .screening_tool import ScreeningTool
 from .docking_parameters import DockingParameters, SpecificDockingParametersABC
 from .docking_result import DockingResult
 from vina import Vina
@@ -77,7 +77,7 @@ class AutoDockVinaParameters(SpecificDockingParametersABC):
 
 
 # インフラ
-class AutoDockVina(DockingToolABC):
+class AutoDockVina(ScreeningTool):
     """
     AutoDock Vina を使ったドッキング計算を行うクラス。
     """
@@ -330,12 +330,12 @@ class AutoDockVina(DockingToolABC):
 
         return results
 
-    # --- CacheableReceptorDocking 準拠 ---
+    # --- ScreeningTool (旧 CacheableReceptorDocking) 準拠 ---
     # Vina の `compute_vina_maps` は receptor + grid box に対し atom-type 別の
     # potential grid を計算する処理で、典型的に 5〜30 秒かかる。同一 receptor に
     # 多数の ligand をドッキングする N×M スクリーニングでは、この結果を一度だけ
     # 計算して `.map` ファイル群に書き出しておけば、以降の docking では
-    # `load_maps` で高速再利用できる。`docking_automation.docking.cacheable_receptor_docking.CacheableReceptorDocking` 参照。
+    # `load_maps` で高速再利用できる。`docking_automation.docking.screening_tool.ScreeningTool` 参照。
 
     def prepare_receptor_cache(
         self,

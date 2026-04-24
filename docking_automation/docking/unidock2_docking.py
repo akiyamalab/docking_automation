@@ -26,10 +26,13 @@ from typing import List, Optional, Tuple
 
 from docking_automation.docking.docking_result import DockingResult
 from docking_automation.docking.grid_box import GridBox
+from docking_automation.docking.preprocessed_compound_set import PreprocessedCompoundSet
+from docking_automation.docking.screening_tool import ScreeningTool
+from docking_automation.molecule.compound_set import CompoundSet
 from docking_automation.molecule.protein import Protein
 
 
-class UniDock2Docking:
+class UniDock2Docking(ScreeningTool):
     """Uni-Dock 2 の 2 ステージ (cache prep + cached docking) インターフェース。
 
     Uni-Dock 2 の特徴:
@@ -37,10 +40,8 @@ class UniDock2Docking:
     - このステップの結果は receptor + grid_box に依存せず、JSON 化可能
     - キャッシュ後の kernel 実行は 10 ligand で 1.6 秒程度
 
-    Note:
-        本クラスは既存の `DockingToolABC` は継承しない。Uni-Dock 2 の
-        設計は v1 と根本的に異なり (SDF 入力 / DMS 受容体 / 階層 config YAML)、
-        共通 ABC に押し込めると各メソッドの意味が歪むため、独立クラスとする。
+    `ScreeningTool` 継承により、Vina / v1 と同じ `run_docking` / `run_docking_with_reuse`
+    API で使用可能。`_preprocess_compound_set` は v2 用に SDF ベースで実装。
     """
 
     def __init__(self, cache_dir: Optional[Path] = None) -> None:
@@ -50,6 +51,24 @@ class UniDock2Docking:
                 未指定時は各メソッド呼び出し時に指定必須。
         """
         self.cache_dir = Path(cache_dir) if cache_dir else None
+
+    def _preprocess_compound_set(self, compound_set: CompoundSet) -> PreprocessedCompoundSet:
+        """Uni-Dock 2 は SDF (3D 化済) を直接入力するため、`CompoundSet.path` と
+        content_hash キャッシュをそのまま `PreprocessedCompoundSet` に包む。
+
+        SDF 変換が必要な場合は caller 側で事前に実施する想定。
+        """
+        # CompoundSet の path は SDF であることが前提 (v2 仕様)
+        compound_hash_cache = getattr(compound_set, '_CompoundSet__compound_hash_cache').copy()
+        # SDF が既にファイル分割されているなら file_paths を使う、そうでなければ
+        # 単一 SDF を全 ligand 用に重複指定するのは不自然なので単一ファイル扱い。
+        file_paths = getattr(compound_set, 'file_paths', None)
+        if file_paths is None:
+            file_paths = [compound_set.path]  # 単一 SDF として
+        return PreprocessedCompoundSet(
+            file_paths=list(file_paths),
+            compound_hash_cache=compound_hash_cache,
+        )
 
     def screen_against_repo(
         self,

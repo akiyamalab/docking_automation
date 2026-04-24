@@ -308,16 +308,16 @@ class TestUniDockDocking:
         assert captured_cmd[captured_cmd.index("--seed") + 1] == "1"
 
 
-# --- CacheableReceptorDocking 準拠テスト ---
+# --- ScreeningTool 準拠テスト ---
 
-from docking_automation.docking.cacheable_receptor_docking import CacheableReceptorDocking
+from docking_automation.docking.screening_tool import ScreeningTool
 from docking_automation.docking.grid_box import GridBox
 
 
 def test_unidock_conforms_to_cacheable_protocol():
-    """UniDockDocking が CacheableReceptorDocking Protocol に準拠していること。"""
+    """UniDockDocking が ScreeningTool Protocol に準拠していること。"""
     tool = UniDockDocking()
-    assert isinstance(tool, CacheableReceptorDocking)
+    assert isinstance(tool, ScreeningTool)
 
 
 def test_prepare_receptor_cache_skips_existing(tmp_path):

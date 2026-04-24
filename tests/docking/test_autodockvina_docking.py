@@ -259,17 +259,17 @@ class TestAutoDockVina:
         assert len(result_collection) == 2
 
 
-# --- CacheableReceptorDocking 準拠テスト ---
+# --- ScreeningTool 準拠テスト ---
 
-from docking_automation.docking.cacheable_receptor_docking import CacheableReceptorDocking
+from docking_automation.docking.screening_tool import ScreeningTool
 from docking_automation.docking.autodockvina_docking import AutoDockVina
 from docking_automation.docking.grid_box import GridBox
 
 
 def test_autodockvina_conforms_to_cacheable_protocol():
-    """AutoDockVina が CacheableReceptorDocking Protocol に準拠していること。"""
+    """AutoDockVina が ScreeningTool Protocol に準拠していること。"""
     tool = AutoDockVina()
-    assert isinstance(tool, CacheableReceptorDocking)
+    assert isinstance(tool, ScreeningTool)
 
 
 def test_prepare_receptor_cache_skips_existing(tmp_path, monkeypatch):
