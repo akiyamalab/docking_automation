@@ -86,61 +86,70 @@ apt install dssp  # or conda install -c conda-forge dssp
 | `GridBox` | ドッキング探索空間の定義 |
 | `GridBoxCache` | JSON 永続キャッシュ。`missing_policy` 3種: skip / error / fallback_centroid |
 | `compound_pipeline.preprocess` | Dimorphite-DL 2.0.2 + RDKit ETKDGv3 (seed=42) による前処理 |
-| `AutoDockVina` | AutoDock Vina を使用した CPU ドッキング |
-| `UniDockDocking` | Uni-Dock GPU バックエンド。backend switchable |
-| `ScreeningRunner` | N×M スクリーニング司令塔。backend=vina/unidock, rescue_mode, Dask LocalCluster, extra_padding |
+| `ScreeningTool` | N×M スクリーニング共通 ABC (cache-first 設計)。`prepare_receptor_cache` + `dock_with_cache` を抽象化、`run_docking` / `run_docking_with_reuse` を具体化 |
+| `AutoDockVina` | AutoDock Vina CPU ドッキング (`compute_vina_maps` + `write_maps` で map cache) |
+| `UniDockDocking` (v1) | Uni-Dock v1 GPU (`--write_maps` / `--maps` で map cache) |
+| `UniDock2Docking` (v2) | Uni-Dock 2 GPU (`engine_checkpoint` で receptor JSON cache、196× 高速化) |
+| `ScreeningRunner` | N×M スクリーニング司令塔。backend=vina/unidock/unidock2, rescue_mode, Dask LocalCluster, extra_padding |
 | `HDF5DockingResultRepository` | HDF5 結果リポジトリ。schema v2 (legacy) + v3 (protein-bundle) |
 
 ### 基本的なワークフロー
 
-1. **タンパク質と化合物の準備**:
-   - タンパク質構造ファイル（PDB, MOL2 など）の読み込み
-   - 化合物ファイル（SDF, MOL2 など）の読み込み
+全ドッキングツールは共通 `ScreeningTool` ABC を実装し、同じ API で使用できます。
+N×M スクリーニング (多受容体 × 多 ligand) では「重い受容体前処理を 1 回だけ実行し、
+多数 ligand で再利用する」cache-first 設計:
 
-2. **グリッドボックスの設定**:
-   - ドッキング計算を行う空間の定義
-   - 既知のリガンド位置や活性部位情報を元に設定
+1. **タンパク質・化合物・GridBox 準備**
+2. **`prepare_receptor_cache(protein, grid_box, out_cache)`** — 1 回だけ重い前処理 (map 計算
+   / topology 解析) をファイルに保存
+3. **`dock_with_cache(cache, ligand_paths, ...)`** — 多数 ligand を高速に回す (cache 再利用)
+4. **結果解析** — `DockingResult` (score + pose SDF + content_hash) のリストを
+   HDF5 repo に保存 or 直接利用
 
-3. **ドッキング計算の実行**:
-   - ドッキングツールの選択と設定
-   - 計算の実行
+単発ペア用には `run_docking(protein, compound_set, grid_box)` 一発で cache を
+内部 tempdir に作って使う高レベル API もあります。
 
-4. **結果の解析**:
-   - スコアによるランキング
-   - ポーズの可視化と評価
-
-### コード例
+### コード例 (N×M 向け、ScreeningTool cache API)
 
 ```python
+from pathlib import Path
 from docking_automation.molecule import Protein, CompoundSet
-from docking_automation.docking import AutoDockVina, GridBox
-from docking_automation.docking.autodockvina_docking import AutoDockVinaParameters
+from docking_automation.docking import GridBox
+from docking_automation.docking.autodockvina_docking import AutoDockVina
 
-# 1. タンパク質と化合物の準備
-protein = Protein("path/to/protein.pdb")
-compounds = CompoundSet("path/to/compounds.sdf")
-
-# 2. グリッドボックスの設定
-# 結晶構造のリガンド位置を中心とする場合
+tool = AutoDockVina()  # UniDockDocking / UniDock2Docking に差し替え可
 grid_box = GridBox(center=(15.0, 23.0, 36.0), size=(20.0, 20.0, 20.0))
+protein = Protein(Path('path/to/protein.pdb'), id='rec1')
 
-# 3. ドッキングパラメータの設定
-params = AutoDockVinaParameters(
-    exhaustiveness=8,  # 探索の徹底度
-    num_modes=9,       # 出力するポーズの数
-    energy_range=3.0   # 出力するポーズのエネルギー範囲
+# 1) 受容体 cache 生成 (1 回のみ)
+cache = tool.prepare_receptor_cache(
+    protein=protein,
+    grid_box=grid_box,
+    out_cache=Path('cache_dir') / protein.content_hash,
 )
 
-# 4. ドッキング計算の実行
-docking_tool = AutoDockVina()
-results = docking_tool.run_docking(protein, compounds, grid_box, params)
+# 2) 多数 ligand を cache 経由で docking
+compound_set = CompoundSet(Path('path/to/compounds.sdf'))
+prep = tool._preprocess_compound_set(compound_set)
 
-# 5. 結果の解析
-top_hits = results.get_top(10)  # 上位10件の結果を取得
+results = tool.dock_with_cache(
+    cache=cache,
+    ligand_paths=list(prep.file_paths),
+    grid_box=grid_box,
+    protein_content_hash=protein.content_hash,
+    compound_content_hashes=[prep.get_compound_hash(i) for i in range(len(prep.file_paths))],
+)
 
-for i, result in enumerate(top_hits):
-    print(f"{i+1}. Score: {result.docking_score}, Compound: {result.compound_id}")
-    print(f"   Pose file: {result.result_path}")
+for r in sorted(results, key=lambda x: x.docking_score)[:10]:
+    print(f'score={r.docking_score:.2f}  compound_hash={r.compound_content_hash[:12]}')
+```
+
+### コード例 (1 回限り、run_docking)
+
+```python
+tool = AutoDockVina()
+collection = tool.run_docking(protein, compound_set, grid_box)  # cache は tempdir に自動生成
+top = sorted(collection, key=lambda r: r.docking_score)[:10]
 ```
 
 より詳細な例は [examples/](examples/) を参照してください。
