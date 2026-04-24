@@ -647,3 +647,23 @@ def test_extra_padding_zero_unchanged(tmp_path):
     assert passed_size == pytest.approx(expected), (
         f"期待サイズ: {expected}, 実際: {passed_size}"
     )
+
+
+# --- ScreeningTool 統合テスト (Step 1 刷新) ---
+
+def test_make_docking_tool_unidock2():
+    """unidock2 backend で UniDock2Docking が返ること。"""
+    from docking_automation.docking.unidock2_docking import UniDock2Docking
+    from docking_automation.docking.screening_runner import _make_docking_tool
+    tool = _make_docking_tool('unidock2')
+    assert isinstance(tool, UniDock2Docking)
+
+
+def test_make_docking_tool_returns_screening_tool():
+    """全 backend が ScreeningTool 派生を返すこと。"""
+    from docking_automation.docking.screening_tool import ScreeningTool
+    from docking_automation.docking.screening_runner import _make_docking_tool
+    for backend in ('vina', 'unidock', 'unidock2'):
+        assert isinstance(_make_docking_tool(backend), ScreeningTool), (
+            f'{backend} backend should return ScreeningTool instance'
+        )

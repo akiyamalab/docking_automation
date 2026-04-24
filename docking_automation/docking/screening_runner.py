@@ -28,15 +28,143 @@ class ScreeningResult:
 
 
 def _make_docking_tool(backend: str):
-    """backendに応じてドッキングツールを生成するファクトリ。"""
+    """backendに応じて ScreeningTool 派生クラスを生成するファクトリ。
+
+    Returns:
+        `ScreeningTool` instance (AutoDockVina / UniDockDocking / UniDock2Docking)。
+    """
     if backend == "vina":
         from docking_automation.docking.autodockvina_docking import AutoDockVina
         return AutoDockVina()
     elif backend == "unidock":
         from docking_automation.docking.unidock_docking import UniDockDocking
         return UniDockDocking()
+    elif backend == "unidock2":
+        from docking_automation.docking.unidock2_docking import UniDock2Docking
+        return UniDock2Docking()
     else:
         raise ValueError(f"Unknown backend: {backend}")
+
+
+def dock_one_protein_via_tool(
+    protein_path: str,
+    protein_id: str,
+    protein_content_hash: str,
+    compound_sdf_path: str,
+    compound_indices: List[int],
+    compound_hashes: Dict[int, str],
+    grid_center: List[float],
+    grid_size: List[float],
+    backend: str = "vina",
+    **kwargs: Any,
+) -> List[dict]:
+    """ScreeningTool 経由で 1 タンパク質ドッキングを Dask worker 上で実行する。
+
+    `dock_one_protein` の ScreeningTool 版 (v2 も含め任意の backend で動作)。
+    `ScreeningRunner(_dock_fn=dock_one_protein_via_tool)` として差し替え可能。
+
+    従来の `dock_one_protein` は Vina / Uni-Dock のロジックをインライン実装で
+    250 行抱えていたが、本関数は ScreeningTool の `prepare_receptor_cache` +
+    `dock_with_cache` に委譲することで ~60 行に収まる。
+
+    Args:
+        backend: "vina" / "unidock" / "unidock2" のいずれか。
+        **kwargs: dock_one_protein との後方互換用 (exhaustiveness / rescue_mode
+            などは現時点では未使用、将来 ScreeningTool 側に伝播予定)。
+    """
+    import gzip as gz
+    import tempfile
+    import time
+    from pathlib import Path
+
+    if not compound_indices:
+        return []
+
+    from docking_automation.converters.molecule_converter import MoleculeConverter
+    from docking_automation.docking.grid_box import GridBox
+    from docking_automation.infrastructure.utilities.file_utils import read_compounds_from_sdf
+    from docking_automation.molecule.protein import Protein
+
+    converter = MoleculeConverter()
+    tool = _make_docking_tool(backend)
+    grid_box = GridBox(
+        center=(float(grid_center[0]), float(grid_center[1]), float(grid_center[2])),
+        size=(float(grid_size[0]), float(grid_size[1]), float(grid_size[2])),
+    )
+    protein_obj = Protein(Path(protein_path), id=protein_id)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        # ligand を backend 固有形式に変換 (Vina/v1: PDBQT, v2: SDF)
+        ligand_paths: List[Path] = []
+        compound_to_hash: Dict[Path, str] = {}
+        compound_to_idx: Dict[Path, int] = {}
+        idx_set = set(compound_indices)
+        for i, (_, lines) in enumerate(read_compounds_from_sdf(Path(compound_sdf_path))):
+            if i not in idx_set:
+                continue
+            sdf_path = tmp_dir / f'compound_{i}.sdf'
+            sdf_path.write_text(''.join(str(l) for l in lines))
+            if backend == 'unidock2':
+                ligand_paths.append(sdf_path)
+                target = sdf_path
+            else:
+                pdbqt_path = tmp_dir / f'compound_{i}.pdbqt'
+                try:
+                    converter.sdf_to_pdbqt(sdf_path, pdbqt_path)
+                    ligand_paths.append(pdbqt_path)
+                    target = pdbqt_path
+                except Exception:
+                    continue
+            compound_to_hash[target] = compound_hashes.get(i, sdf_path.stem)
+            compound_to_idx[target] = i
+
+        cache_prefix = tmp_dir / f'{protein_content_hash}_cache'
+        t0 = time.monotonic()
+        tool.prepare_receptor_cache(protein_obj, grid_box, cache_prefix)
+        dock_results = tool.dock_with_cache(
+            cache=cache_prefix,
+            ligand_paths=ligand_paths,
+            grid_box=grid_box,
+            protein_content_hash=protein_content_hash,
+            compound_content_hashes=[compound_to_hash[p] for p in ligand_paths],
+        )
+        elapsed_per = round((time.monotonic() - t0) / max(len(ligand_paths), 1), 3)
+
+    # 結果を ScreeningRunner._collect_and_save が期待する dict 形式に変換
+    results_by_idx: Dict[int, dict] = {}
+    for r in dock_results:
+        lig_path = ligand_paths[r.compound_index] if r.compound_index < len(ligand_paths) else None
+        orig_idx = compound_to_idx.get(lig_path) if lig_path else None
+        if orig_idx is None:
+            continue
+        pose_blob = None
+        if r.result_path and r.result_path.exists():
+            pose_blob = gz.compress(r.result_path.read_bytes(), compresslevel=9)
+        results_by_idx[orig_idx] = {
+            'protein_id': protein_id,
+            'compound_index': orig_idx,
+            'protein_content_hash': protein_content_hash,
+            'compound_content_hash': compound_hashes.get(orig_idx),
+            'score': r.docking_score,
+            'pose_blob': pose_blob,
+            'elapsed_sec': elapsed_per,
+            'error': None,
+        }
+
+    return [
+        results_by_idx.get(idx, {
+            'protein_id': protein_id,
+            'compound_index': idx,
+            'protein_content_hash': protein_content_hash,
+            'compound_content_hash': compound_hashes.get(idx),
+            'score': None,
+            'pose_blob': None,
+            'elapsed_sec': elapsed_per if 'elapsed_per' in dir() else 0.0,
+            'error': 'not_in_dock_results',
+        })
+        for idx in compound_indices
+    ]
 
 
 def _parse_unidock_score_from_pdbqt(pdbqt_path) -> Optional[float]:
