@@ -352,6 +352,21 @@ UnidockProtocolRunner(
 | キャッシュなし | 322 s |
 | **フルキャッシュ** | **1.64 s (196×)** スコア完全一致 |
 
+v2 (cached) N×NLIG グリッド実測 (RTX 4090, OMP=1, MPS 有効):
+
+Wall clock [s]:
+
+| NLIG\N | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| 10  | 2.46  | 3.79  | 5.09  | 8.87  | 16.21 |
+| 20  | 2.85  | 5.30  | 8.26  | 15.11 | 28.13 |
+| 40  | 4.50  | 8.81  | 14.51 | 28.73 | 54.62 |
+| 80  | 7.08  | 14.30 | 23.75 | 45.87 | 88.05 |
+| 160 | 11.76 | 24.88 | 41.23 | 84.63 | 163.45 |
+
+Throughput ピーク: **N=16×NLIG=160 で 941 pairs/min** (v1 ベスト 257 pairs/min の 3.66×)。per-pair 下限 ~0.064 s/pair。並列効率は v2 では低い (N=16 で speedup 1.15〜2.43) — v1 と異なり GPU kernel が既に高速で MPS による加速余地が小さいため。
+- N=16 高負荷時に `UnidockProtocolRunner` 内部の multiprocessing が稀に futex デッドロック。運用では **timeout + retry** 必須。
+
 並列化については `OMP_NUM_THREADS=1` 設定で対称スケーリング (2 proc × 330s でそれぞれ N=1 baseline と一致)。
 default OMP=24 だと複数プロセスで 48 threads × 24 cores のオーバーサブスクリプションが発生するため注意。
 
