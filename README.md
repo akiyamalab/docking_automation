@@ -198,6 +198,7 @@ runner.run(protein_set, compound_set, grid_box_cache)
 | `analyze_scores.py` | matplotlib 解析 (分布/ヒートマップ/top 受容体). HDF5 と Uni-Dock 生 PDBQT 両対応 |
 | `render_top_poses.py` | PyMOL headless 描画 (top-K ポーズを PNG 出力). HDF5 と PDBQT 両対応 |
 | `unidock2_cached_screening.py` | Uni-Dock 2 E2E (受容体 cache 並列生成 → cached docking → HDF5 保存) |
+| `unidock2_slurm_smoke.py` | Slurm (dask_jobqueue SLURMCluster) 経由で UD2 cached docking を投入 |
 
 ## Phase 毎の実測値
 
@@ -372,12 +373,28 @@ default OMP=24 だと複数プロセスで 48 threads × 24 cores のオーバ�
 
 Phase 4 運用前提の実装:
 - **`docking_automation.docking.unidock2_docking.UniDock2Docking`**: cache prep + cached docking を API 化
+  - `dock_with_cache_robust`: subprocess + timeout + retry (内部 multiprocessing デッドロック対策)
+  - `screen_against_repo`: content_hash ベースで HDF5 repo と連携 (冪等性保証)
 - **`scripts/prepare_unidock2_caches.py`**: `ProcessPoolExecutor` で複数受容体の cache を並列生成
   (OMP=1 を worker 内で自動設定、content_hash ベースで冪等)
 - **`examples/unidock2_cached_screening.py`**: 受容体並列 prep → cached docking → HDF5 集約の E2E
   PoC (Phase 4 規模では `scripts/prepare_unidock2_caches.py` を事前実行)
 - Python API 必須 (CLI は `ligand_json_file_name` を未対応)
 - conda env `unidock2` 配下で実行 (pip 未配布, `http://quetz.dp.tech:8088/get/baymax` channel)
+
+### v1 破綻スコアの v2 での解消 (2026-04-24 検証)
+
+v1 で破綻した 11 ユニークペア (lig_020/117 等) を v2 で再計算したところ、**全 11 ペアで
+`[-10.67, -6.23]` kcal/mol の正常値を返却**。v2 は別エンジンの新実装で GitHub #144 の
+FLT_MAX 問題を構造的に回避している。Phase 4 で v2 採用なら canary + Vina 再採点は不要。
+
+### Slurm (HPC) 経由の実行
+
+`examples/unidock2_slurm_smoke.py` で `dask_jobqueue` 経由で Slurm sbatch 投入 →
+複数ノード/ジョブで cached docking を並列実行する E2E を確認済。単一ノード環境下の
+検証で 3 jobs × 2 cores = 6 workers、3 receptor × 10 ligand を 184.5s で完走。
+本番 (ABCI/TSUBAME/Wisteria) 運用時は `SLURMCluster(queue=..., cores=..., memory=...)` の
+パラメータのみ環境差分を反映すれば流用可能。
 
 ## Phase 4: 今後の対応
 

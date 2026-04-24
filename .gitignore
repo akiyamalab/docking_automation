@@ -74,3 +74,4 @@ examples/output/
 
 # 一時ディレクトリ
 tmp/
+slurm-*.out

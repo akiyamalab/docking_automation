@@ -75,3 +75,15 @@ RUN wget -q "https://github.com/dptech-corp/Uni-Dock/releases/download/1.1.0/uni
 # Remove cuda-compat so nvidia-container-runtime auto-mounts host libcuda (portable across driver versions)
 RUN apt-get remove -y cuda-compat-12-4 2>/dev/null || true
 
+#### Uni-Dock 2 (v0.6.x, separate conda env) ####
+# - base env とは numpy/MDAnalysis ABI が衝突するため独立 env にする
+# - quetz.dp.tech が唯一の配布経路 (pip 未対応)
+# - openbabel/rdkit の pip wheel が system libstdc++ を引き込むと msys 拡張が
+#   CXXABI_1.3.15 not found で落ちるため、libstdcxx-ng を --force-reinstall する
+RUN mamba create -n unidock2 python=3.10 -c conda-forge -y \
+    && mamba install -n unidock2 unidock2 cuda-version=12.0 \
+       -c http://quetz.dp.tech:8088/get/baymax -c conda-forge -y \
+    && mamba install -n unidock2 -c conda-forge openbabel -y \
+    && mamba install -n unidock2 -c conda-forge libstdcxx-ng libgcc-ng --force-reinstall -y \
+    && /opt/conda/envs/unidock2/bin/pip install vina h5py
+
