@@ -34,8 +34,12 @@ def _worker_dock(
     grid_size: Tuple[float, float, float],
     protein_content_hash: str,
     compound_content_hashes: List[str],
+    timeout_sec: float = 600.0,
+    max_retries: int = 2,
 ) -> Tuple[str, List[dict], float, Optional[str]]:
     """worker: cached docking を 1 receptor 分実行。結果を dict のリストにして親に返す。
+
+    `dock_with_cache_robust` 経由で timeout + retry 付き (稀な内部デッドロックに対策)。
 
     Returns:
         (protein_content_hash, result_dicts, elapsed, error)
@@ -51,12 +55,14 @@ def _worker_dock(
 
         grid_box = GridBox(center=list(grid_center), size=list(grid_size))
         tool = UniDock2Docking()
-        results = tool.dock_with_cache(
+        results = tool.dock_with_cache_robust(
             cache_json=Path(cache_json),
             ligand_sdf_list=[Path(p) for p in ligand_sdf_list],
             grid_box=grid_box,
             protein_content_hash=protein_content_hash,
             compound_content_hashes=compound_content_hashes,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
         )
 
         # DockingResult は HDF5 保存前に SDF 本体を読み出しておく

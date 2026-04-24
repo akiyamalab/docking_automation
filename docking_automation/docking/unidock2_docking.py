@@ -51,6 +51,82 @@ class UniDock2Docking:
         """
         self.cache_dir = Path(cache_dir) if cache_dir else None
 
+    def screen_against_repo(
+        self,
+        cache_json: Path,
+        ligand_paths: List[Path],
+        grid_box: GridBox,
+        protein_content_hash: str,
+        compound_content_hashes: List[str],
+        compound_set_id: str,
+        repo,
+        timeout_sec: float = 600.0,
+        max_retries: int = 2,
+    ) -> List[DockingResult]:
+        """content_hash ベースで HDF5 repo から再利用しつつ、未計算ペアだけ cached docking。
+
+        既存の HDF5DockingResultRepository と組み合わせて Phase 4 規模のスクリーニングで
+        冪等性 (途中中断からの再開) を担保する。
+
+        Args:
+            cache_json: 受容体 JSON cache (prepare_receptor_cache の戻り値)。
+            ligand_paths: SDF パスのリスト (3D 化済)。
+            grid_box: GridBox。
+            protein_content_hash: Protein.content_hash。
+            compound_content_hashes: ligand_paths と同順序の content_hash リスト。
+            compound_set_id: CompoundSet 識別子。
+            repo: HDF5DockingResultRepository。
+            timeout_sec/max_retries: dock_with_cache_robust に渡す。
+
+        Returns:
+            再利用 + 新規計算 を合わせた全 DockingResult。
+
+        Side effect:
+            repo.save() を新規計算結果に対して呼ぶ。既に保存済みのペアは再保存しない。
+        """
+        n = len(ligand_paths)
+        assert len(compound_content_hashes) == n, 'ligand paths と hashes は同じ長さ必要'
+
+        reused_results: List[DockingResult] = []
+        new_indices: List[int] = []
+        for i, ch in enumerate(compound_content_hashes):
+            if repo._exists(protein_content_hash, ch):
+                try:
+                    existing = repo.load_by_hashes(protein_content_hash, ch)
+                    if existing is not None:
+                        reused_results.append(existing)
+                        continue
+                except Exception:
+                    pass
+            new_indices.append(i)
+
+        if not new_indices:
+            return reused_results
+
+        new_ligands = [ligand_paths[i] for i in new_indices]
+        new_hashes = [compound_content_hashes[i] for i in new_indices]
+        new_results = self.dock_with_cache_robust(
+            cache_json=cache_json,
+            ligand_sdf_list=new_ligands,
+            grid_box=grid_box,
+            protein_content_hash=protein_content_hash,
+            compound_content_hashes=new_hashes,
+            timeout_sec=timeout_sec,
+            max_retries=max_retries,
+        )
+
+        # compound_set_id, compound_index を再配置して save
+        # dock_with_cache_robust は compound_index に ligand_sdf_list の絶対 index を入れるので、
+        # ここで元の CompoundSet の index に戻す。
+        for r in new_results:
+            r.compound_set_id = compound_set_id
+            lig_local_idx = r.compound_index
+            if 0 <= lig_local_idx < len(new_indices):
+                r.compound_index = new_indices[lig_local_idx]
+            repo.save(r)
+
+        return reused_results + new_results
+
     def cache_path_for(self, protein: Protein) -> Path:
         """content_hash ベースの cache file path を返す。
 
@@ -130,6 +206,125 @@ class UniDock2Docking:
                 json.dump({'receptor': data['receptor']}, f)
 
         return out_json
+
+    def dock_with_cache_robust(
+        self,
+        cache_json: Path,
+        ligand_sdf_list: List[Path],
+        grid_box: GridBox,
+        protein_content_hash: str,
+        compound_content_hashes: Optional[List[str]] = None,
+        working_dir: Optional[Path] = None,
+        docking_pose_sdf: Optional[Path] = None,
+        timeout_sec: float = 600.0,
+        max_retries: int = 2,
+    ) -> List[DockingResult]:
+        """subprocess + timeout + retry ラッパー。内部デッドロック対策。
+
+        `UnidockProtocolRunner` は内部で pathos 経由の multiprocessing プールを
+        使うが、N=16 等の高並列時に稀に futex デッドロックが観察された。
+        本メソッドは dock_with_cache を独立プロセスで実行し、timeout 超過時に
+        process group ごと kill して retry する。
+
+        Args:
+            timeout_sec: 1 回あたりの上限時間。超過すると kill + retry。
+            max_retries: タイムアウト時の再試行回数 (0 なら 1 回だけ実行)。
+            他の引数は dock_with_cache と同じ。
+
+        Raises:
+            TimeoutError: retry 含め全試行でタイムアウト。
+        """
+        import json as _json
+        import shlex
+        import signal
+        import subprocess
+        import sys
+
+        if working_dir is None:
+            working_dir_ctx = tempfile.TemporaryDirectory(prefix='ud2_robust_')
+            working_dir = Path(working_dir_ctx.name)
+        else:
+            working_dir_ctx = None
+            working_dir = Path(working_dir)
+            working_dir.mkdir(parents=True, exist_ok=True)
+
+        if docking_pose_sdf is None:
+            docking_pose_sdf = working_dir / 'pose.sdf'
+
+        try:
+            args_file = working_dir / '_worker_args.json'
+            args_file.write_text(_json.dumps({
+                'cache_json': str(cache_json),
+                'ligand_sdf_list': [str(p) for p in ligand_sdf_list],
+                'grid_center': list(grid_box.center),
+                'grid_size': list(grid_box.size),
+                'working_dir': str(working_dir),
+                'docking_pose_sdf': str(docking_pose_sdf),
+            }))
+
+            # `-m` だと package __init__ が openbabel を早期 load するため、環境によっては
+            # libstdc++ と msys 拡張の ABI が衝突する。worker はスタンドアロン設計なので
+            # 直接ファイルパスで呼び出す。
+            worker = Path(__file__).parent / '_unidock2_worker.py'
+            cmd = [sys.executable, str(worker), str(args_file)]
+
+            last_exc: Optional[BaseException] = None
+            for attempt in range(max_retries + 1):
+                try:
+                    subprocess.run(
+                        cmd,
+                        timeout=timeout_sec,
+                        start_new_session=True,  # os.killpg() で確実に全子孫を終了させるため
+                        check=True,
+                        capture_output=True,
+                    )
+                    break
+                except subprocess.TimeoutExpired as e:
+                    last_exc = e
+                    self._kill_session_from(e.cmd)
+                    continue
+                except subprocess.CalledProcessError as e:
+                    last_exc = e
+                    # 異常終了は内部エラー。retry 対象に含める。
+                    continue
+            else:
+                raise TimeoutError(
+                    f'dock_with_cache_robust: all {max_retries + 1} attempts failed '
+                    f'(last: {type(last_exc).__name__})'
+                ) from last_exc
+
+            return self._parse_pose_sdf(
+                Path(docking_pose_sdf),
+                ligand_sdf_list,
+                protein_content_hash,
+                compound_content_hashes,
+            )
+        finally:
+            if working_dir_ctx is not None:
+                working_dir_ctx.cleanup()
+
+    @staticmethod
+    def _kill_session_from(cmd) -> None:
+        """subprocess.TimeoutExpired 時に session 単位で強制終了。
+
+        start_new_session=True で起動した child は独立 session。
+        孫プロセス (pathos プール等) も同じ session に属するので、
+        session leader に SIGKILL → setsid 配下全部が終了する。
+        """
+        import os
+        import signal
+        import subprocess as sp
+        # TimeoutExpired は Popen を自動で kill するが、孫プロセスは別 PID group にある
+        # かもしれないので pgrep で残存を拾って SIGKILL する。
+        try:
+            pids = sp.check_output(['pgrep', '-f', '_unidock2_worker']).decode().split()
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except (ProcessLookupError, ValueError):
+                    pass
+        except sp.CalledProcessError:
+            pass
 
     def dock_with_cache(
         self,
