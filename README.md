@@ -197,6 +197,7 @@ runner.run(protein_set, compound_set, grid_box_cache)
 | `hdf5_repository_modes_example.py` | HDF5 schema 切替例 |
 | `analyze_scores.py` | matplotlib 解析 (分布/ヒートマップ/top 受容体). HDF5 と Uni-Dock 生 PDBQT 両対応 |
 | `render_top_poses.py` | PyMOL headless 描画 (top-K ポーズを PNG 出力). HDF5 と PDBQT 両対応 |
+| `unidock2_cached_screening.py` | Uni-Dock 2 E2E (受容体 cache 並列生成 → cached docking → HDF5 保存) |
 
 ## Phase 毎の実測値
 
@@ -353,6 +354,15 @@ UnidockProtocolRunner(
 
 並列化については `OMP_NUM_THREADS=1` 設定で対称スケーリング (2 proc × 330s でそれぞれ N=1 baseline と一致)。
 default OMP=24 だと複数プロセスで 48 threads × 24 cores のオーバーサブスクリプションが発生するため注意。
+
+Phase 4 運用前提の実装:
+- **`docking_automation.docking.unidock2_docking.UniDock2Docking`**: cache prep + cached docking を API 化
+- **`scripts/prepare_unidock2_caches.py`**: `ProcessPoolExecutor` で複数受容体の cache を並列生成
+  (OMP=1 を worker 内で自動設定、content_hash ベースで冪等)
+- **`examples/unidock2_cached_screening.py`**: 受容体並列 prep → cached docking → HDF5 集約の E2E
+  PoC (Phase 4 規模では `scripts/prepare_unidock2_caches.py` を事前実行)
+- Python API 必須 (CLI は `ligand_json_file_name` を未対応)
+- conda env `unidock2` 配下で実行 (pip 未配布, `http://quetz.dp.tech:8088/get/baymax` channel)
 
 ## Phase 4: 今後の対応
 
