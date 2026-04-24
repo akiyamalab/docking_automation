@@ -257,3 +257,49 @@ class TestAutoDockVina:
         
         # 結果を検証
         assert len(result_collection) == 2
+
+
+# --- CacheableReceptorDocking 準拠テスト ---
+
+from docking_automation.docking.cacheable_receptor_docking import CacheableReceptorDocking
+from docking_automation.docking.autodockvina_docking import AutoDockVina
+from docking_automation.docking.grid_box import GridBox
+
+
+def test_autodockvina_conforms_to_cacheable_protocol():
+    """AutoDockVina が CacheableReceptorDocking Protocol に準拠していること。"""
+    tool = AutoDockVina()
+    assert isinstance(tool, CacheableReceptorDocking)
+
+
+def test_prepare_receptor_cache_skips_existing(tmp_path, monkeypatch):
+    """既存の .map ファイル群がある場合は compute_vina_maps を呼ばない。
+
+    force=False (既定) かつ `{prefix}.*.map` が存在する → 即 return。
+    """
+    tool = AutoDockVina()
+    cache = tmp_path / 'myrec'
+    # ダミー .map ファイルを配置 (既存キャッシュをシミュレート)
+    (tmp_path / 'myrec.C_H.map').write_text('dummy')
+
+    called = {'compute': 0, 'write': 0}
+
+    class FakeVina:
+        def __init__(self, *a, **kw): pass
+        def set_receptor(self, p): pass
+        def compute_vina_maps(self, center, box_size):
+            called['compute'] += 1
+        def write_maps(self, map_prefix_filename, overwrite=False):
+            called['write'] += 1
+
+    monkeypatch.setattr('docking_automation.docking.autodockvina_docking.Vina', FakeVina)
+
+    # protein は _preprocess_protein が呼ばれる前に skip されるため mock 不要
+    result = tool.prepare_receptor_cache(
+        protein=MagicMock(),  # 型は気にせず (skip 経路)
+        grid_box=GridBox(center=[0.0, 0.0, 0.0], size=[30.0, 30.0, 30.0]),
+        out_cache=cache,
+    )
+    assert result == cache
+    assert called['compute'] == 0, 'compute_vina_maps が呼ばれるべきでない'
+    assert called['write'] == 0, 'write_maps が呼ばれるべきでない'

@@ -18,6 +18,8 @@ class VinaProtocol(Protocol):
     def set_receptor(self, receptor_path: str) -> None: ...
     def set_ligand_from_file(self, ligand_path: str) -> None: ...
     def compute_vina_maps(self, center: List[float], box_size: List[float]) -> None: ...
+    def write_maps(self, map_prefix_filename: str = "receptor", overwrite: bool = False) -> None: ...
+    def load_maps(self, map_prefix_filename: str) -> None: ...
     def dock(self, exhaustiveness: int = 8, n_poses: int = 9, min_rmsd: float = 1.0) -> None: ...
     def write_poses(self, output_path: str, n_poses: int = 9, overwrite: bool = False) -> None: ...
     def energies(self) -> npt.NDArray[np.float64]: ...
@@ -325,5 +327,119 @@ class AutoDockVina(DockingToolABC):
 
         if not results:
             raise ValueError("有効なドッキング結果が得られませんでした。")
+
+        return results
+
+    # --- CacheableReceptorDocking 準拠 ---
+    # Vina の `compute_vina_maps` は receptor + grid box に対し atom-type 別の
+    # potential grid を計算する処理で、典型的に 5〜30 秒かかる。同一 receptor に
+    # 多数の ligand をドッキングする N×M スクリーニングでは、この結果を一度だけ
+    # 計算して `.map` ファイル群に書き出しておけば、以降の docking では
+    # `load_maps` で高速再利用できる。`docking_automation.docking.cacheable_receptor_docking.CacheableReceptorDocking` 参照。
+
+    def prepare_receptor_cache(
+        self,
+        protein: Protein,
+        grid_box,
+        out_cache: Path,
+        force: bool = False,
+        seed: int = 0,
+    ) -> Path:
+        """Vina の atom-type 別 map ファイル群を生成してキャッシュする。
+
+        Args:
+            protein: 受容体。まだ PDBQT 化されていなくても `_preprocess_protein` で変換される。
+            grid_box: ドッキングボックス。
+            out_cache: 出力パス prefix (拡張子なし)。生成ファイル:
+                `{out_cache}.C.map`, `{out_cache}.N.map`, ... など atom type 数個。
+            force: True なら既存 `.map` 群を上書き。
+            seed: Vina 初期化用 seed。map 計算自体には影響しない。
+
+        Returns:
+            out_cache (= 生成した .map 群の prefix)。load_maps にそのまま渡せる。
+        """
+        out_cache = Path(out_cache)
+        # Vina が生成する map ファイル名は atom type (C_H, N_A, O_D など) 依存で
+        # 受容体によって組が変わる可能性があるため、特定名ではなく glob で確認。
+        out_cache.parent.mkdir(parents=True, exist_ok=True)
+        existing = list(out_cache.parent.glob(f'{out_cache.name}.*.map'))
+        if existing and not force:
+            return out_cache
+
+        preprocessed = self._preprocess_protein(protein)
+        if preprocessed.file_path is None:
+            raise ValueError("PreprocessedProtein.file_path が未設定のため map を生成できません")
+
+        v = Vina(cpu=1, seed=seed, verbosity=0)
+        v.set_receptor(str(preprocessed.file_path))
+        v.compute_vina_maps(
+            center=[float(c) for c in grid_box.center],
+            box_size=[float(s) for s in grid_box.size],
+        )
+        v.write_maps(map_prefix_filename=str(out_cache), overwrite=True)
+        return out_cache
+
+    def dock_with_cache(
+        self,
+        cache: Path,
+        ligand_paths: List[Path],
+        grid_box,
+        protein_content_hash: str,
+        compound_content_hashes: Optional[List[str]] = None,
+        exhaustiveness: int = 8,
+        num_modes: int = 1,
+        seed: int = 0,
+    ) -> List[DockingResult]:
+        """キャッシュ済み map を再利用して多数 ligand を docking。
+
+        Args:
+            cache: `prepare_receptor_cache` が返した prefix (例: `/path/to/prefix`)。
+                `{prefix}.C.map` など atom-type 別 map が存在する前提。
+            ligand_paths: PDBQT 形式の ligand ファイルリスト。
+            grid_box: docking box。map と一致していれば良い。
+            protein_content_hash: 結果 `DockingResult.protein_content_hash`。
+            compound_content_hashes: None の場合はファイル stem を使用。
+            exhaustiveness, num_modes, seed: Vina パラメータ。
+
+        Returns:
+            各 ligand の best pose 1 件の DockingResult。
+        """
+        v = Vina(cpu=1, seed=seed, verbosity=0)
+        v.load_maps(map_prefix_filename=str(cache))
+
+        results: List[DockingResult] = []
+        for idx, lig_path in enumerate(ligand_paths):
+            ch = (
+                compound_content_hashes[idx]
+                if compound_content_hashes is not None
+                else lig_path.stem
+            )
+            try:
+                tmp_dir = Path(tempfile.mkdtemp())
+                out_pdbqt = tmp_dir / f"{lig_path.stem}_out.pdbqt"
+                out_sdf = tmp_dir / f"{lig_path.stem}_out.sdf"
+
+                v.set_ligand_from_file(str(lig_path))
+                v.dock(exhaustiveness=exhaustiveness, n_poses=num_modes, min_rmsd=1.0)
+                v.write_poses(str(out_pdbqt), n_poses=num_modes, overwrite=True)
+                self.converter.pdbqt_to_sdf(out_pdbqt, out_sdf)
+                scores = v.energies()
+
+                results.append(
+                    DockingResult(
+                        result_path=out_sdf,
+                        protein_id='',
+                        compound_set_id=lig_path.parent.name,
+                        compound_index=idx,
+                        docking_score=float(scores[0, 0]),
+                        protein_content_hash=protein_content_hash,
+                        compound_content_hash=ch,
+                        compoundset_content_hash=ch,
+                        metadata={'tool': 'AutoDock Vina', 'source': 'vina_cached_maps'},
+                    )
+                )
+            except Exception as e:
+                print(f"ligand {lig_path.name} の dock_with_cache 失敗: {e}")
+                continue
 
         return results
