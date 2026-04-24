@@ -195,6 +195,8 @@ runner.run(protein_set, compound_set, grid_box_cache)
 | `unidock_e2e_test.py` | Uni-Dock GPU 動作確認 (5 ペア小規模) |
 | `dask_executor_example.py` | Dask LocalCluster 使用例 |
 | `hdf5_repository_modes_example.py` | HDF5 schema 切替例 |
+| `analyze_scores.py` | matplotlib 解析 (分布/ヒートマップ/top 受容体). HDF5 と Uni-Dock 生 PDBQT 両対応 |
+| `render_top_poses.py` | PyMOL headless 描画 (top-K ポーズを PNG 出力). HDF5 と PDBQT 両対応 |
 
 ## Phase 毎の実測値
 
@@ -292,6 +294,65 @@ pytest tests/molecule/          # ProteinSet / CompoundSet
 ```
 
 > **注**: 31 SKIP は Phase 3/4 向けの未実装プレースホルダー（GPU テスト等）です。
+
+## GPU 並列化・キャッシュ運用 (RTX 4090 での実測値)
+
+### Uni-Dock v1.1.3 + CUDA MPS (N×NLIG グリッド)
+
+単一プロセスでは RTX 4090 の SM を飽和できないため、**CUDA MPS** (`nvidia-cuda-mps-control -d`) による複数
+プロセス並列が必須。MPS 無しの並列は sequential より遅化 (0.92×)。
+
+Wall clock [s] (exhaustiveness=8, DMS 入力):
+
+| NLIG\N | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| 10  | 51.6 | 55.9  | 68.6  | 77.6  | 113.1 |
+| 20  | 81.7 | 97.6  | 111.8 | 141.5 | 226.6 |
+| 40  | 95.5 | 106.1 | 130.1 | 193.3 | 281.6 |
+| 80  | 88.1 | 106.3 | 154.7 | 220.2 | 352.5 |
+| 160 | 95.6 | 149.4 | 186.6 | 298.7 | **OOM** |
+
+- Speedup 最大: **N=16×NLIG=10 で 7.30×** (小バッチ×高並列で init オーバーヘッドを希釈)
+- Throughput 最大: **N=8×NLIG=160 で 257 pairs/min** (約 15,400 pairs/h)
+- **N=16×NLIG=160 は CUDA OOM** (24 GB 4090 上限)。運用目安 N×NLIG ≲ 1600
+- 運用指針: **NLIG を 150〜200 に固定してから N=4〜8 を選ぶ** (NLIG 増加が init 償却で優先)
+
+### Uni-Dock 破綻スコアと Vina CPU 再採点フォールバック
+
+Uni-Dock GPU v1.1.3 は全ペア中 ~2% で `[−200, +125]` kcal/mol の破綻スコアを返す (`REMARK VINA RESULT`)。
+原因は GPU BFGS が box 外に pose を動かした後の refine_step 不足で `FLT_MAX` がセットされる既知バグ
+([Uni-Dock #144](https://github.com/dptech-corp/Uni-Dock/issues/144), 修正 PR
+[#182](https://github.com/dptech-corp/Uni-Dock/pull/182) 未マージ)。
+
+検証結果 (`examples/analyze_scores.py` + Vina 再採点):
+- 破綻 13 ペアすべてで Vina CPU 再採点が `[-8.1, -4.4]` kcal/mol 正常値を返却 → **入力は健全、GPU 実装固有**
+- 特定リガンド (剛直多環 + カルボキシレート) が全受容体で再現性ある破綻
+  - lig_020/117 (torsions≤2, 縮合 4 環): 4/4 受容体で破綻
+- canary プリスクリーン + Vina 再採点の 2 段構えを推奨
+
+### Uni-Dock 2 (v0.6.1) — receptor JSON キャッシュで 196× 高速化
+
+Uni-Dock 2 は docking 1 回あたり ~320 秒の前処理オーバーヘッドがあり、プロファイルで **99.8% が
+`analyze_receptor_topology()`** (msys.LoadDMS + prepare_receptor_residue_mol_list) と判明。GPU kernel
+本体は 10 ligand で 1.6 秒と極めて高速。
+
+解決策: `engine_checkpoint: true` で `ud2_engine_inputs.json` を保存し、2 回目以降の docking では:
+
+```python
+UnidockProtocolRunner(
+    receptor_file_name='receptor_cache.json',       # .json 拡張子で analyze_receptor_topology を bypass
+    ligand_json_file_name='ligand_cache.json',      # (optional) ligand prep も bypass
+    ...
+).run_unidock_protocol()
+```
+
+| 条件 | wall |
+|---|---:|
+| キャッシュなし | 322 s |
+| **フルキャッシュ** | **1.64 s (196×)** スコア完全一致 |
+
+並列化については `OMP_NUM_THREADS=1` 設定で対称スケーリング (2 proc × 330s でそれぞれ N=1 baseline と一致)。
+default OMP=24 だと複数プロセスで 48 threads × 24 cores のオーバーサブスクリプションが発生するため注意。
 
 ## Phase 4: 今後の対応
 
