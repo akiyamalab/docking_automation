@@ -77,8 +77,9 @@ class TestGridBox:
 
         # _eboxsizeメソッドをモック
         with patch("docking_automation.docking.grid_box.GridBox._eboxsize", return_value=20):
-            # MoleculeConverterをモック
-            with patch("docking_automation.docking.grid_box.MoleculeConverter", return_value=mock_converter):
+            # MoleculeConverter をモック (grid_box 内で lazy import されるため、
+            # converters モジュール側の MoleculeConverter をパッチする)
+            with patch("docking_automation.converters.molecule_converter.MoleculeConverter", return_value=mock_converter):
                 # GridBoxを生成
                 grid_box = GridBox.from_compound(mock_compound)
 

@@ -4,9 +4,12 @@ import numpy as np
 import numpy.typing as npt
 from rdkit import Chem
 
-from docking_automation.converters.molecule_converter import MoleculeConverter
 from docking_automation.molecule.compound_set import CompoundSet
 from docking_automation.molecule.protein import Protein
+
+# MoleculeConverter は openbabel を引き込む重い依存。GridBox の値オブジェクト
+# 定義自体には不要で、内部メソッドで遅延 import する方が環境分離に有利
+# (unidock2 conda env で openbabel と msys の C++ ABI 衝突を避けるため)。
 
 # TODO: [DDD] 値オブジェクトとしての実装を強化する
 # - dataclass(frozen=True)への変換を検討する
@@ -273,7 +276,8 @@ class GridBox:
         Returns:
             GridBoxオブジェクト
         """
-        # MoleculeConverterのインスタンスを作成
+        # MoleculeConverter は openbabel 依存なので遅延 import
+        from docking_automation.converters.molecule_converter import MoleculeConverter
         converter = MoleculeConverter()
 
         # CompoundSetからRDKitの分子オブジェクトに変換
