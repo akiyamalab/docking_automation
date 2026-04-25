@@ -46,6 +46,50 @@ def _make_docking_tool(backend: str):
         raise ValueError(f"Unknown backend: {backend}")
 
 
+def _prepare_cache_for_dask(
+    protein_path: str,
+    protein_content_hash: str,
+    grid_center: List[float],
+    grid_size: List[float],
+    cache_dir: str,
+    force: bool = False,
+) -> dict:
+    """Dask worker で 1 受容体の UniDock2 receptor cache を生成する。
+
+    Returns:
+        {"protein_content_hash": str, "cache_path": str|None, "error": str|None}
+    """
+    import os
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
+    try:
+        from docking_automation.docking.grid_box import GridBox
+        from docking_automation.docking.unidock2_docking import UniDock2Docking
+        from docking_automation.molecule.protein import Protein
+
+        protein = Protein(Path(protein_path))
+        grid_box = GridBox(
+            center=(float(grid_center[0]), float(grid_center[1]), float(grid_center[2])),
+            size=(float(grid_size[0]), float(grid_size[1]), float(grid_size[2])),
+        )
+        cache_path = Path(cache_dir) / f"{protein_content_hash}.json"
+        tool = UniDock2Docking(cache_dir=Path(cache_dir))
+        tool.prepare_receptor_cache(protein, grid_box, cache_path, force=force)
+        return {
+            "protein_content_hash": protein_content_hash,
+            "cache_path": str(cache_path),
+            "error": None,
+        }
+    except Exception as e:
+        return {
+            "protein_content_hash": protein_content_hash,
+            "cache_path": None,
+            "error": f"{type(e).__name__}: {e}",
+        }
+
+
 def dock_one_protein_via_tool(
     protein_path: str,
     protein_id: str,
@@ -119,9 +163,17 @@ def dock_one_protein_via_tool(
             compound_to_hash[target] = compound_hashes.get(i, sdf_path.stem)
             compound_to_idx[target] = i
 
-        cache_prefix = tmp_dir / f'{protein_content_hash}_cache'
+        # cache_dir が指定されていれば pre-generated cache を使う (unidock2 のみ)
+        ext_cache_dir = kwargs.get('cache_dir')
+        if ext_cache_dir and backend == 'unidock2':
+            cache_prefix = Path(ext_cache_dir) / f'{protein_content_hash}.json'
+        else:
+            cache_ext = '.json' if backend == 'unidock2' else ''
+            cache_prefix = tmp_dir / f'{protein_content_hash}_cache{cache_ext}'
+
         t0 = time.monotonic()
-        tool.prepare_receptor_cache(protein_obj, grid_box, cache_prefix)
+        if not cache_prefix.exists():
+            tool.prepare_receptor_cache(protein_obj, grid_box, cache_prefix)
         dock_results = tool.dock_with_cache(
             cache=cache_prefix,
             ligand_paths=ligand_paths,
@@ -536,6 +588,9 @@ class ScreeningRunner:
         schema_version: str = "v2",
         extra_padding: float = 5.0,
         rescue_mode: bool = False,
+        cache_dir: Optional[Path] = None,
+        force_cache: bool = False,
+        cache_n_workers: Optional[int] = None,
         _dock_fn: Optional[Callable] = None,
         _cluster_kwargs: Optional[dict] = None,
     ) -> None:
@@ -555,6 +610,9 @@ class ScreeningRunner:
         self.schema_version = schema_version
         self.extra_padding = extra_padding
         self.rescue_mode = rescue_mode
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+        self.force_cache = force_cache
+        self.cache_n_workers = cache_n_workers
         self._dock_fn = _dock_fn
         self._cluster_kwargs = _cluster_kwargs or {}
 
@@ -612,6 +670,22 @@ class ScreeningRunner:
                 else:
                     valid_pairs_by_protein[protein_id] = compound_indices
 
+            # Phase 1: receptor cache pre-generation (unidock2 only)
+            if (valid_pairs_by_protein
+                    and self.cache_dir
+                    and self.backend == 'unidock2'):
+                cache_results = self.prepare_receptor_caches(
+                    valid_pairs_by_protein,
+                )
+                for p_hash, info in cache_results.items():
+                    log_fp.write(json.dumps({
+                        "phase": "cache_prep",
+                        "protein_content_hash": p_hash,
+                        "cache_path": info.get("cache_path"),
+                        "error": info.get("error"),
+                    }) + "\n")
+
+            # Phase 2: docking
             if valid_pairs_by_protein:
                 cluster_kwargs = {
                     "n_workers": self.dask_n_workers,
@@ -640,6 +714,98 @@ class ScreeningRunner:
             hdf5_path=self.hdf5_path,
             log_path=self.log_path,
         )
+
+    def prepare_receptor_caches(
+        self,
+        pairs_by_protein: Dict[str, List[int]],
+    ) -> Dict[str, dict]:
+        """Dask で UniDock2 receptor cache を並列生成する。
+
+        既存 cache がある受容体はスキップ (force_cache=True で上書き)。
+        cache_dir が None または backend が unidock2 でない場合は空 dict を返す。
+
+        Args:
+            pairs_by_protein: protein_id -> compound_indices (対象タンパク質の列挙用)。
+
+        Returns:
+            {protein_content_hash: {"cache_path": str|None, "error": str|None}}
+        """
+        if self.cache_dir is None or self.backend != 'unidock2':
+            return {}
+
+        from distributed import Client, LocalCluster, as_completed
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        protein_hashes = self.protein_set.content_hashes()
+
+        # 対象受容体のリストを構築 (content_hash で重複排除)
+        seen_hashes: Dict[str, str] = {}  # content_hash -> protein_id
+        tasks: List[dict] = []
+        for protein_id in pairs_by_protein:
+            protein = self.protein_set[protein_id]
+            p_hash = protein_hashes[protein_id]
+            if p_hash in seen_hashes:
+                continue
+            seen_hashes[p_hash] = protein_id
+
+            cache_path = self.cache_dir / f"{p_hash}.json"
+            if cache_path.exists() and not self.force_cache:
+                continue
+
+            grid_box = self.grid_box_cache.get(protein)
+            if grid_box is None:
+                continue
+
+            padded_size = [float(s) + 2.0 * self.extra_padding for s in grid_box.size]
+            tasks.append({
+                "protein_path": str(protein.path),
+                "protein_content_hash": p_hash,
+                "grid_center": [float(c) for c in grid_box.center],
+                "grid_size": padded_size,
+            })
+
+        if not tasks:
+            return {}
+
+        n_workers = self.cache_n_workers or self.dask_n_workers
+        cluster = LocalCluster(
+            n_workers=n_workers,
+            threads_per_worker=1,
+            memory_limit="4GB",
+            **self._cluster_kwargs,
+        )
+        client = Client(cluster)
+        results: Dict[str, dict] = {}
+        try:
+            futures = {}
+            for t in tasks:
+                f = client.submit(
+                    _prepare_cache_for_dask,
+                    t["protein_path"],
+                    t["protein_content_hash"],
+                    t["grid_center"],
+                    t["grid_size"],
+                    str(self.cache_dir),
+                    self.force_cache,
+                )
+                futures[f] = t["protein_content_hash"]
+
+            for future in as_completed(list(futures.keys())):
+                p_hash = futures[future]
+                try:
+                    result = future.result()
+                    results[p_hash] = result
+                except Exception as e:
+                    results[p_hash] = {
+                        "protein_content_hash": p_hash,
+                        "cache_path": None,
+                        "error": f"{type(e).__name__}: {e}",
+                    }
+        finally:
+            client.close()
+            cluster.close()
+
+        return results
 
     def _submit_to_dask(
         self,
@@ -676,11 +842,12 @@ class ScreeningRunner:
                 compound_hashes,
                 [float(c) for c in grid_box.center],
                 padded_size,
-                self.exhaustiveness,
-                self.top_n_poses,
+                exhaustiveness=self.exhaustiveness,
+                top_n_poses=self.top_n_poses,
                 backend=self.backend,
                 search_mode=self.search_mode,
                 rescue_mode=self.rescue_mode,
+                cache_dir=str(self.cache_dir) if self.cache_dir else None,
             )
             futures[future] = protein_id
 

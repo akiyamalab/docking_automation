@@ -125,8 +125,8 @@ class UniDock2Docking(ScreeningTool):
         new_ligands = [ligand_paths[i] for i in new_indices]
         new_hashes = [compound_content_hashes[i] for i in new_indices]
         new_results = self.dock_with_cache_robust(
-            cache_json=cache_json,
-            ligand_sdf_list=new_ligands,
+            cache=cache_json,
+            ligand_paths=new_ligands,
             grid_box=grid_box,
             protein_content_hash=protein_content_hash,
             compound_content_hashes=new_hashes,
@@ -228,8 +228,8 @@ class UniDock2Docking(ScreeningTool):
 
     def dock_with_cache_robust(
         self,
-        cache_json: Path,
-        ligand_sdf_list: List[Path],
+        cache: Path,
+        ligand_paths: List[Path],
         grid_box: GridBox,
         protein_content_hash: str,
         compound_content_hashes: Optional[List[str]] = None,
@@ -273,8 +273,8 @@ class UniDock2Docking(ScreeningTool):
         try:
             args_file = working_dir / '_worker_args.json'
             args_file.write_text(_json.dumps({
-                'cache_json': str(cache_json),
-                'ligand_sdf_list': [str(p) for p in ligand_sdf_list],
+                'cache_json': str(cache),
+                'ligand_sdf_list': [str(p) for p in ligand_paths],
                 'grid_center': list(grid_box.center),
                 'grid_size': list(grid_box.size),
                 'working_dir': str(working_dir),
@@ -314,7 +314,7 @@ class UniDock2Docking(ScreeningTool):
 
             return self._parse_pose_sdf(
                 Path(docking_pose_sdf),
-                ligand_sdf_list,
+                ligand_paths,
                 protein_content_hash,
                 compound_content_hashes,
             )
@@ -347,8 +347,8 @@ class UniDock2Docking(ScreeningTool):
 
     def dock_with_cache(
         self,
-        cache_json: Path,
-        ligand_sdf_list: List[Path],
+        cache: Path,
+        ligand_paths: List[Path],
         grid_box: GridBox,
         protein_content_hash: str,
         compound_content_hashes: Optional[List[str]] = None,
@@ -358,8 +358,8 @@ class UniDock2Docking(ScreeningTool):
         """キャッシュ済み receptor JSON を用いて複数 ligand を一括 docking。
 
         Args:
-            cache_json: `prepare_receptor_cache` で生成した JSON。
-            ligand_sdf_list: 既に 3D 化済み SDF のパスリスト。
+            cache: `prepare_receptor_cache` で生成した JSON。
+            ligand_paths: 既に 3D 化済み SDF のパスリスト。
             grid_box: docking box (center と size)。
             protein_content_hash: 結果の `DockingResult.protein_content_hash` に使う。
             compound_content_hashes: None の場合は SDF stem を使用。
@@ -389,8 +389,8 @@ class UniDock2Docking(ScreeningTool):
 
         try:
             runner = UnidockProtocolRunner(
-                receptor_file_name=str(cache_json),  # .json 拡張子で analyze_receptor_topology を bypass
-                ligand_sdf_file_name_list=[str(p) for p in ligand_sdf_list],
+                receptor_file_name=str(cache),  # .json 拡張子で analyze_receptor_topology を bypass
+                ligand_sdf_file_name_list=[str(p) for p in ligand_paths],
                 target_center=tuple(grid_box.center),
                 working_dir_name=str(working_dir),
                 docking_pose_sdf_file_name=str(docking_pose_sdf),
@@ -399,7 +399,7 @@ class UniDock2Docking(ScreeningTool):
 
             return self._parse_pose_sdf(
                 docking_pose_sdf,
-                ligand_sdf_list,
+                ligand_paths,
                 protein_content_hash,
                 compound_content_hashes,
             )

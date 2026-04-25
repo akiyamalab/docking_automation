@@ -216,6 +216,7 @@ def _fake_dock_one_protein(
     search_mode="balance",
     rescue_mode=False,
     rescue_search_mode="detail",
+    **kwargs,
 ):
     """テスト用: ファイルアクセスなしに即座にフェイク結果を返す。"""
     import gzip
@@ -667,3 +668,218 @@ def test_make_docking_tool_returns_screening_tool():
         assert isinstance(_make_docking_tool(backend), ScreeningTool), (
             f'{backend} backend should return ScreeningTool instance'
         )
+
+
+# --- cache_dir 統合テスト ---
+
+def test_screening_runner_init_cache_params(tmp_path):
+    """cache_dir / force_cache / cache_n_workers が正しく格納されること。"""
+    ps = MagicMock()
+    cs = MagicMock()
+    gbc = MagicMock()
+    cache_dir = tmp_path / "cache"
+    runner = ScreeningRunner(
+        protein_set=ps,
+        compound_set=cs,
+        grid_box_cache=gbc,
+        hdf5_path=tmp_path / "out.h5",
+        cache_dir=cache_dir,
+        force_cache=True,
+        cache_n_workers=12,
+    )
+    assert runner.cache_dir == cache_dir
+    assert runner.force_cache is True
+    assert runner.cache_n_workers == 12
+
+
+def test_screening_runner_init_cache_defaults(tmp_path):
+    """cache_dir がデフォルトで None であること。"""
+    runner = ScreeningRunner(
+        protein_set=MagicMock(),
+        compound_set=MagicMock(),
+        grid_box_cache=MagicMock(),
+        hdf5_path=tmp_path / "out.h5",
+    )
+    assert runner.cache_dir is None
+    assert runner.force_cache is False
+    assert runner.cache_n_workers is None
+
+
+def test_prepare_receptor_caches_skips_non_unidock2(tmp_path):
+    """backend=vina のとき prepare_receptor_caches は空 dict を返す。"""
+    runner = ScreeningRunner(
+        protein_set=MagicMock(),
+        compound_set=MagicMock(),
+        grid_box_cache=MagicMock(),
+        hdf5_path=tmp_path / "out.h5",
+        backend="vina",
+        cache_dir=tmp_path / "cache",
+    )
+    result = runner.prepare_receptor_caches({"prot_A": [0, 1]})
+    assert result == {}
+
+
+def test_prepare_receptor_caches_skips_when_no_cache_dir(tmp_path):
+    """cache_dir=None のとき空 dict を返す。"""
+    runner = ScreeningRunner(
+        protein_set=MagicMock(),
+        compound_set=MagicMock(),
+        grid_box_cache=MagicMock(),
+        hdf5_path=tmp_path / "out.h5",
+        backend="unidock2",
+        cache_dir=None,
+    )
+    result = runner.prepare_receptor_caches({"prot_A": [0, 1]})
+    assert result == {}
+
+
+def test_prepare_receptor_caches_skips_existing(tmp_path):
+    """既存 cache がある場合はスキップし、Dask クラスタを作らない。"""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    protein = _make_protein("pA", "hash_aaa", tmp_path)
+    # protein.path ファイルも存在させる
+    protein.path.write_text("ATOM dummy")
+
+    # 既存 cache ファイルを作成
+    (cache_dir / "hash_aaa.json").write_text("{}")
+
+    ps = MagicMock()
+    ps.__getitem__ = MagicMock(return_value=protein)
+    ps.content_hashes.return_value = {"pA": "hash_aaa"}
+
+    gbc = MagicMock()
+    gbc.get.return_value = MagicMock(center=(0, 0, 0), size=(10, 10, 10))
+
+    runner = ScreeningRunner(
+        protein_set=ps,
+        compound_set=MagicMock(),
+        grid_box_cache=gbc,
+        hdf5_path=tmp_path / "out.h5",
+        backend="unidock2",
+        cache_dir=cache_dir,
+        force_cache=False,
+    )
+    # force=False なので全部スキップ → Dask cluster を作らない → 空 dict
+    result = runner.prepare_receptor_caches({"pA": [0, 1]})
+    assert result == {}
+
+
+@patch("docking_automation.docking.screening_runner._make_docking_tool")
+def test_dock_one_protein_via_tool_uses_cache_dir(mock_make_tool, tmp_path):
+    """cache_dir 指定時、既存 cache があれば prepare_receptor_cache を呼ばない。"""
+    from docking_automation.docking.screening_runner import dock_one_protein_via_tool
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    # dummy cache を作成
+    chash = "dummyhash123"
+    (cache_dir / f"{chash}.json").write_text('{"receptor": []}')
+
+    # dummy compound SDF
+    sdf = tmp_path / "compounds.sdf"
+    sdf.write_text(
+        "benzene\n\n\n  1  0  0  0  0  0  0  0  0  0  1 V2000\n"
+        "    0.0    0.0    0.0 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n$$$$\n"
+    )
+
+    # dummy protein PDB
+    pdb = tmp_path / "pA.pdb"
+    pdb.write_text("ATOM      1  N   ALA A   1       0.0   0.0   0.0  1.00  0.00\nEND\n")
+
+    mock_tool = MagicMock()
+    mock_tool.dock_with_cache.return_value = []
+    mock_make_tool.return_value = mock_tool
+
+    dock_one_protein_via_tool(
+        protein_path=str(pdb),
+        protein_id="pA",
+        protein_content_hash=chash,
+        compound_sdf_path=str(sdf),
+        compound_indices=[0],
+        compound_hashes={0: "chash_0"},
+        grid_center=[0.0, 0.0, 0.0],
+        grid_size=[10.0, 10.0, 10.0],
+        backend="unidock2",
+        cache_dir=str(cache_dir),
+    )
+
+    # prepare_receptor_cache は呼ばれない (cache が既にある)
+    mock_tool.prepare_receptor_cache.assert_not_called()
+    # dock_with_cache は cache path で呼ばれる
+    mock_tool.dock_with_cache.assert_called_once()
+    call_kwargs = mock_tool.dock_with_cache.call_args
+    assert str(call_kwargs.kwargs.get("cache", call_kwargs[1].get("cache", ""))) == str(
+        cache_dir / f"{chash}.json"
+    ) or str(call_kwargs[0][0] if call_kwargs[0] else "") == str(
+        cache_dir / f"{chash}.json"
+    )
+
+
+@patch("docking_automation.docking.screening_runner._make_docking_tool")
+def test_dock_one_protein_via_tool_fallback_no_cache(mock_make_tool, tmp_path):
+    """cache_dir なしの場合、prepare_receptor_cache が呼ばれること。"""
+    from docking_automation.docking.screening_runner import dock_one_protein_via_tool
+
+    sdf = tmp_path / "compounds.sdf"
+    sdf.write_text(
+        "benzene\n\n\n  1  0  0  0  0  0  0  0  0  0  1 V2000\n"
+        "    0.0    0.0    0.0 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n$$$$\n"
+    )
+    pdb = tmp_path / "pA.pdb"
+    pdb.write_text("ATOM      1  N   ALA A   1       0.0   0.0   0.0  1.00  0.00\nEND\n")
+
+    mock_tool = MagicMock()
+    mock_tool.dock_with_cache.return_value = []
+    mock_make_tool.return_value = mock_tool
+
+    dock_one_protein_via_tool(
+        protein_path=str(pdb),
+        protein_id="pA",
+        protein_content_hash="somehash",
+        compound_sdf_path=str(sdf),
+        compound_indices=[0],
+        compound_hashes={0: "chash_0"},
+        grid_center=[0.0, 0.0, 0.0],
+        grid_size=[10.0, 10.0, 10.0],
+        backend="unidock2",
+    )
+
+    # cache_dir なしなので prepare_receptor_cache が呼ばれる
+    mock_tool.prepare_receptor_cache.assert_called_once()
+
+
+def test_submit_to_dask_passes_cache_dir(tmp_path):
+    """_submit_to_dask が cache_dir を kwargs に含めること。"""
+    protein = _make_protein("pA", "hash_aaa", tmp_path)
+    ps = MagicMock()
+    ps.__getitem__ = MagicMock(return_value=protein)
+    ps.content_hashes.return_value = {"pA": "hash_aaa"}
+
+    cs = MagicMock()
+    cs.path = tmp_path / "compounds.sdf"
+    cs.get_compound_hash.return_value = "chash_0"
+
+    gbc = MagicMock()
+    gbc.get.return_value = MagicMock(center=(0, 0, 0), size=(10, 10, 10))
+
+    cache_dir = tmp_path / "cache"
+    runner = ScreeningRunner(
+        protein_set=ps,
+        compound_set=cs,
+        grid_box_cache=gbc,
+        hdf5_path=tmp_path / "out.h5",
+        cache_dir=cache_dir,
+        _dock_fn=_fake_dock_one_protein,
+    )
+
+    mock_client = MagicMock()
+    runner._submit_to_dask(mock_client, {"pA": [0]})
+
+    # submit の kwargs に cache_dir が含まれること
+    call_kwargs = mock_client.submit.call_args.kwargs
+    assert call_kwargs.get("cache_dir") == str(cache_dir)
