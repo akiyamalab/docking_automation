@@ -283,11 +283,23 @@ def dock_one_protein(
             ]
 
             t0 = time.monotonic()
-            subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+            # SIGSEGV (rc=-11) は GitHub Uni-Dock #174 の large-box 起因 segfault。
+            # box を 80% に縮めて再試行 (30³→24³ など) すると解消する経験則あり。
+            if proc.returncode == -11:
+                shrunk_cmd = list(cmd)
+                for i, arg in enumerate(shrunk_cmd):
+                    if arg in ("--size_x", "--size_y", "--size_z"):
+                        shrunk_cmd[i + 1] = str(float(shrunk_cmd[i + 1]) * 0.8)
+                proc = subprocess.run(shrunk_cmd, capture_output=True, text=True, timeout=600, check=False)
             elapsed_total = time.monotonic() - t0
             elapsed_per = round(elapsed_total / len(valid_indices), 3)
+            unidock_stderr_tail = (proc.stderr or '')[-300:] if proc.returncode != 0 else None
+            unidock_returncode = proc.returncode
         else:
             elapsed_per = 0.0
+            unidock_stderr_tail = None
+            unidock_returncode = 0
 
         for idx in compound_indices:
             c_hash = compound_hashes.get(idx)
@@ -309,6 +321,9 @@ def dock_one_protein(
             out_pdbqt = out_dir / f"{stem}_out.pdbqt"
 
             if not out_pdbqt.exists():
+                err_msg = "unidock_output_missing"
+                if unidock_returncode != 0 and unidock_stderr_tail:
+                    err_msg = f"unidock_output_missing(rc={unidock_returncode}): {unidock_stderr_tail!r}"
                 results.append({
                     "protein_id": protein_id,
                     "compound_index": idx,
@@ -317,7 +332,7 @@ def dock_one_protein(
                     "score": None,
                     "pose_blob": None,
                     "elapsed_sec": elapsed_per,
-                    "error": "unidock_output_missing",
+                    "error": err_msg,
                 })
                 continue
 
