@@ -407,6 +407,38 @@ FLT_MAX 問題を構造的に回避している。Phase 4 で v2 採用なら ca
 本番 (ABCI/TSUBAME/Wisteria) 運用時は `SLURMCluster(queue=..., cores=..., memory=...)` の
 パラメータのみ環境差分を反映すれば流用可能。
 
+### TSUBAME 4.0 での実行 (`jobs/`)
+
+TSUBAME 上で大規模スクリーニングを回すためのスクリプト一式は `jobs/` 配下に置いてある
+(`prep-receptors.sh`, `prep-boxes-array.sh`, `dock-screen.sh` など)。同梱の
+`tsubame-env.def` は unidock2 + CUDA 13 の apptainer 定義ファイル。
+
+`jobs/inputs/` (受容体 PDB / ligand SDF / fpocket box) と `results/jobs/` (ジョブ生 tar/log)
+は実データのため `.gitignore` 済。`jobs/prepare_inputs.py` 等で再生成する。
+
+#### 初回セットアップ
+
+1. **tsubame_skills wrapper を取得** (本リポジトリと同階層に clone):
+
+   ```bash
+   git clone <tsubame_skills repo URL> ../tsubame_skills
+   ```
+
+2. **個人設定を作成**:
+
+   ```bash
+   cp .tsubame.conf.example .tsubame.conf
+   # .tsubame.conf を編集し、TSUBAME_GROUP に自分の課金グループを設定
+   ```
+
+   `.tsubame.conf` は `.gitignore` 済 (個人設定のため)。`.tsubame.conf.example`
+   をテンプレートとして利用する。
+
+3. **wrapper の使い方**: `docking_automation/` ディレクトリ直下から
+   `../tsubame_skills/bin/tsubame <verb>` を実行する。`bin/tsubame` は cwd を
+   workdir 同期源として扱うため、ここから `tsubame push` すれば
+   `docking_automation/` 配下が TSUBAME workdir に同期される。
+
 ## Phase 4: 今後の対応
 
 ### HPC 実行計画

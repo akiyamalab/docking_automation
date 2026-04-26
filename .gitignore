@@ -75,3 +75,13 @@ examples/output/
 # 一時ディレクトリ
 tmp/
 slurm-*.out
+
+# TSUBAME ラッパー個人設定 (.tsubame.conf.example をコピーして使う)
+.tsubame.conf
+
+# jobs/inputs/ は本番計算の実データ (受容体 PDB / ligand SDF / boxes / fpocket cache)。
+# プロジェクトでは手法・ツールのみを管理するため除外。再生成は jobs/prepare_inputs.py 等で行う。
+jobs/inputs/
+
+# TSUBAME ジョブの実行結果は journal にまとめ、生 tar/log は git に含めない
+results/jobs/

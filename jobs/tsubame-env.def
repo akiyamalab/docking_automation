@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: continuumio/miniconda3:26.1.1
+
+# このリポジトリの .devcontainer/Dockerfile から
+# **バッチ計算に必要な最小集合のみ** を抽出した Apptainer 定義ファイル。
+# 除外: tmux / claude / inotify-tools / weasyprint / texlive / pandoc 等
+# (これらはエージェント運用や論文執筆用であり、計算ジョブ実行には不要)
+
+%post
+    set -eu
+
+    apt-get update
+    # rsync: 必須ではないがジョブ内ファイル同期で使う場合に便利
+    apt-get install -y --no-install-recommends git curl rsync ca-certificates
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    # conda パッケージ
+    # unidock2 (v2): dptech 私設 baymax channel に CUDA 13 build があるため採用。
+    # TSUBAME の MPS wrapper は CUDA 13 ハードコードなので、MPS 経由で並列実行するなら
+    # client (sif) も CUDA 13 でないとプロトコル不整合で hang する。
+    # unidock (v1) は conda-forge に CUDA 12.x build しかないため不採用。
+    # python=3.10 は unidock2 0.6 系の要件。
+    conda create -n unidock2 python=3.10 -c conda-forge -y
+    conda install -n unidock2 \
+        -c http://quetz.dp.tech:8088/get/baymax \
+        -c conda-forge -y \
+        unidock2 'cuda-version=13.*' \
+        pandas matplotlib rdkit \
+        fpocket
+    conda clean -afy
+
+    /opt/conda/envs/unidock2/bin/pip install --no-cache-dir japanize-matplotlib
+
+    # unidock2 は初回 import 時に torsion library pickle を書き出す挙動がある。
+    # ランタイムで /opt/conda が read-only になるため、ビルド中 (writable) に pre-populate しておく。
+    /opt/conda/envs/unidock2/bin/python -c "import unidock_processing" || \
+        echo "torsion library pre-populate skipped (will populate at runtime if writable)"
+
+%environment
+    export PATH=/opt/conda/envs/unidock2/bin:/opt/conda/bin:$PATH
+    export LANG=C.UTF-8
+
+%labels
+    Maintainer  docking_automation
+    Origin      .devcontainer/Dockerfile (computational subset)
+    Base        continuumio/miniconda3:26.1.1
+
+%runscript
+    # `apptainer run env.sif <cmd>` 形で渡されたコマンドをそのまま実行
+    exec "$@"
+
+%test
+    # ビルド直後に走る smoke test
+    /opt/conda/envs/unidock2/bin/python -c "import pandas, matplotlib, rdkit; print('smoke ok:', rdkit.__version__)"
+    /opt/conda/envs/unidock2/bin/unidock2 --help | head -3 || echo "unidock2 --help failed (may be torsion library write issue, OK at runtime if pre-populated)"

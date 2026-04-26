@@ -1,0 +1,29 @@
+# tsubame ラッパー設定ファイル (例) — docking_automation プロジェクト用
+#
+# このファイルを `.tsubame.conf` にコピーして編集する:
+#     cp .tsubame.conf.example .tsubame.conf
+#     # .tsubame.conf を編集して TSUBAME_GROUP などを自分の値に置き換える
+#
+# `.tsubame.conf` は個人ごとの課金グループ等を含むため `.gitignore` 済。
+# tsubame_skills/bin/tsubame は cwd から親方向に walk-up して `.tsubame.conf` を
+# 探し、見つけたディレクトリを PROJECT_ROOT として push/pull の同期源に使う。
+#
+# 配置先 (上から順に読み込まれ、後勝ち):
+#   1. $TSUBAME_CONFIG               環境変数で明示指定したパス
+#   2. <PROJECT_ROOT>/.tsubame.conf  プロジェクト直下 (本ファイル)
+#   3. ~/.config/tsubame/config      ユーザ全体共通
+#
+# 設定値の優先順位 (高 → 低):
+#   CLI フラグ > 環境変数 > 本ファイル > 既定値
+#
+# 形式: shell-sourced (KEY="value")。
+
+# 既定の課金グループ。設定しておくと毎回 --group を指定しなくてよい。
+# 動作確認時のみ "お試し実行" に戻したい場合は: tsubame submit --no-group <script>
+# TSUBAME_GROUP="tga-pharma_s1"
+
+# ssh エイリアス。既定は tsubame-claude (~/.ssh/config の Host エントリ名)。
+# TSUBAME_SSH_HOST="tsubame-claude"
+
+# tsubame pull の取得先。既定の ./results で OK (このプロジェクト直下に集める)。
+# TSUBAME_RESULTS_DIR="./results"
