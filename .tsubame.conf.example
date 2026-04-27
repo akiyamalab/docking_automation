@@ -5,7 +5,7 @@
 #     # .tsubame.conf を編集して TSUBAME_GROUP などを自分の値に置き換える
 #
 # `.tsubame.conf` は個人ごとの課金グループ等を含むため `.gitignore` 済。
-# tsubame_skills/bin/tsubame は cwd から親方向に walk-up して `.tsubame.conf` を
+# claude_tsubame/bin/tsubame は cwd から親方向に walk-up して `.tsubame.conf` を
 # 探し、見つけたディレクトリを PROJECT_ROOT として push/pull の同期源に使う。
 #
 # 配置先 (上から順に読み込まれ、後勝ち):

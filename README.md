@@ -477,10 +477,10 @@ TSUBAME 上で大規模スクリーニングを回すためのスクリプト一
 
 #### 初回セットアップ
 
-1. **tsubame_skills wrapper を取得** (本リポジトリと同階層に clone):
+1. **claude_tsubame wrapper を取得** (本リポジトリと同階層に clone):
 
    ```bash
-   git clone <tsubame_skills repo URL> ../tsubame_skills
+   git clone git@github.com:keisuke-yanagisawa/claude_tsubame.git ../claude_tsubame
    ```
 
 2. **個人設定を作成**:
@@ -494,7 +494,7 @@ TSUBAME 上で大規模スクリーニングを回すためのスクリプト一
    をテンプレートとして利用する。
 
 3. **wrapper の使い方**: `docking_automation/` ディレクトリ直下から
-   `../tsubame_skills/bin/tsubame <verb>` を実行する。`bin/tsubame` は cwd を
+   `../claude_tsubame/bin/tsubame <verb>` を実行する。`bin/tsubame` は cwd を
    workdir 同期源として扱うため、ここから `tsubame push` すれば
    `docking_automation/` 配下が TSUBAME workdir に同期される。
 

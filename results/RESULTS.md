@@ -1,7 +1,7 @@
 # Results Journal
 
 TSUBAME 上の作業記録。各エントリは独立した md として `journal/` 配下に保存。
-新しい依頼が完了したら Claude が自動的に追加する規約 (詳細は `tsubame_skills/.claude/skills/tsubame/SKILL.md`)。
+新しい依頼が完了したら Claude が自動的に追加する規約 (詳細は `claude_tsubame/.claude/skills/tsubame/SKILL.md`)。
 
 | 日付 | タイトル | 概要 | 詳細 |
 |---|---|---|---|
