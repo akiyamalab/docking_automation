@@ -209,6 +209,65 @@ runner.run(protein_set, compound_set, grid_box_cache)
 | `unidock2_cached_screening.py` | Uni-Dock 2 E2E (受容体 cache 並列生成 → cached docking → HDF5 保存) |
 | `unidock2_slurm_smoke.py` | Slurm (dask_jobqueue SLURMCluster) 経由で UD2 cached docking を投入 |
 
+## scripts/ ガイド
+
+CLI スクリプト一式 (`pip install -e .` で PYTHONPATH に乗る前提)。
+
+| スクリプト | 目的 |
+|---|---|
+| `prepare_unidock2_caches.py` | Uni-Dock 2 受容体 JSON cache の並列生成 (24 並列で 24× 高速化) |
+| `preprocess_afdb_mouse.py` | AFDB マウスプロテオーム (21,452 件) の前処理 |
+| `shard_afdb_pdb.py` | UniProt ID シャーディング |
+| `export_poses.py` | HDF5 結果から指定範囲の `receptor.pdb + poses.sdf` (multi-record) を書き出し |
+
+### `scripts/export_poses.py` — 結果の取り出し
+
+HDF5 に蓄積されたドッキング結果は、protein × compound ペア数が大きいため
+全件をそのまま書き出すと 1 万 × 1 万 = 10⁸ 件規模になる。本スクリプトは
+**範囲指定で取り出して `receptor.pdb + multi-record poses.sdf` の対に変換**する。
+対応スキーマは v2 (per-pair) と v3 (protein-bundle) の両方 (auto 検出)。
+
+**出力レイアウト**:
+
+```
+<out>/
+  <protein_id>/
+    receptor.pdb     # --receptors-dir から該当 PDB をコピー
+    poses.sdf        # 該当 protein の選択された pose を全件束ねた multi-record SDF
+                     # 各 record に protein_id / compound_hash / compound_set_id /
+                     # compound_index / docking_score を property として付与
+```
+
+**範囲指定** (AND で適用):
+
+| フラグ | 内容 |
+|---|---|
+| `--proteins`, `--proteins-file` | protein_id を絞り込む (カンマ区切り or 1 行 1 件) |
+| `--compounds-file` | compound 絞り込み: `compound_hash` 単独行 or `compound_set_id<TAB>compound_index` |
+| `--top-k N` | per-protein で score 昇順 top-N |
+| `--score-max X` | `score <= X` の pose のみ |
+| `--limit-pairs N` | 安全上限 (default 1000)。超過時は abort し、絞り込みを促す |
+
+**使用例**:
+
+```bash
+# 上位 5 ポーズ × 2 タンパク質を取り出す
+python scripts/export_poses.py \
+    --hdf5 results/run.h5 \
+    --receptors-dir jobs/inputs/receptors_pdb \
+    --proteins AF-XXXX-F1-model_v6,AF-YYYY-F1-model_v6 \
+    --top-k 5 \
+    --out exported/
+
+# 全 protein でスコア -8.0 以下の pose のみ (件数上限を 5000 に拡張)
+python scripts/export_poses.py \
+    --hdf5 results/run.h5 \
+    --receptors-dir jobs/inputs/receptors_pdb \
+    --score-max -8.0 \
+    --limit-pairs 5000 \
+    --out exported/
+```
+
 ## Phase 毎の実測値
 
 | Phase | 対象 | 規模 | 実測値 |
