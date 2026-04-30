@@ -119,12 +119,14 @@ def dock_one_protein_via_tool(
     if not compound_indices:
         return []
 
-    from docking_automation.converters.molecule_converter import MoleculeConverter
     from docking_automation.docking.grid_box import GridBox
     from docking_automation.infrastructure.utilities.file_utils import read_compounds_from_sdf
     from docking_automation.molecule.protein import Protein
 
-    converter = MoleculeConverter()
+    converter = None
+    if backend != 'unidock2':
+        from docking_automation.converters.molecule_converter import MoleculeConverter
+        converter = MoleculeConverter()
     tool = _make_docking_tool(backend)
     grid_box = GridBox(
         center=(float(grid_center[0]), float(grid_center[1]), float(grid_center[2])),
@@ -148,6 +150,7 @@ def dock_one_protein_via_tool(
                 ligand_paths.append(sdf_path)
                 target = sdf_path
             else:
+                assert converter is not None  # backend != 'unidock2' なので必ず初期化済
                 pdbqt_path = tmp_dir / f'compound_{i}.pdbqt'
                 try:
                     converter.sdf_to_pdbqt(sdf_path, pdbqt_path)
